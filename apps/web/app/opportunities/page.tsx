@@ -1,0 +1,1 @@
+import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Opportunities" description="Track qualified revenue opportunities through the sales cycle."/>}

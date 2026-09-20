@@ -1,0 +1,1 @@
+import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Reports" description="Understand conversion, activity and sales performance."/>}

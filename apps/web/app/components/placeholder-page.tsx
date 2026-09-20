@@ -1,0 +1,1 @@
+export function PlaceholderPage({title,description}:{title:string;description:string}){return <div className="placeholderPage"><header><div><p className="eyebrow">Sales workspace</p><h1>{title}</h1><p>{description}</p></div></header><section className="panel emptyState"><strong>{title} workspace</strong><p>This section is ready for its CRM workflow and data.</p></section></div>}

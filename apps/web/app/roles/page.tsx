@@ -1,0 +1,1 @@
+import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Roles & permissions" description="Role names categorize people; permissions control access."/>}

@@ -1,0 +1,1 @@
+import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Tasks" description="Stay on top of follow-ups and next actions."/>}

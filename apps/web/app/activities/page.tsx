@@ -1,0 +1,1 @@
+import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Activities" description="Review calls, meetings, notes and customer touchpoints."/>}
