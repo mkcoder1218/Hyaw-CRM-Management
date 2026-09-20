@@ -1,0 +1,1 @@
+{"extends":"../../tsconfig.base.json","compilerOptions":{"outDir":"../../dist/apps/api","module":"CommonJS","types":["node"]},"include":["src/**/*.ts","../../libs/contracts/src/**/*.ts"]}
