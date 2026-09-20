@@ -1,0 +1,1 @@
+import * as React from "react";export function Badge(p:React.HTMLAttributes<HTMLSpanElement>){return <span className="ui-badge" {...p}/>}
