@@ -1,0 +1,11 @@
+"use client";
+import { useEffect, useState, type FormEvent } from "react";
+
+export type CreateField={name:string;label:string;type?:"text"|"email"|"tel"|"number"|"date"|"textarea"|"select";placeholder?:string;options?:string[];required?:boolean};
+
+export function CreateModal({entity,fields,buttonLabel,onCreated}:{entity:string;fields:CreateField[];buttonLabel?:string;onCreated?:(data:Record<string,string>)=>void}){
+ const [open,setOpen]=useState(false);const [saved,setSaved]=useState(false);
+ useEffect(()=>{if(!open)return;const close=(e:KeyboardEvent)=>e.key==="Escape"&&setOpen(false);document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[open]);
+ function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget).entries()) as Record<string,string>;onCreated?.(data);setSaved(true);setTimeout(()=>{setOpen(false);setSaved(false)},500)}
+ return <><button className="primary" onClick={()=>setOpen(true)}>+ {buttonLabel??`New ${entity}`}</button>{open&&<div className="modalBackdrop" role="presentation" onMouseDown={(e)=>e.target===e.currentTarget&&setOpen(false)}><section className="createModal" role="dialog" aria-modal="true" aria-label={`Create ${entity}`}><div className="modalHead"><div><p className="eyebrow">Create</p><h2>New {entity}</h2><p>Add the details below. You can update them later.</p></div><button className="iconButton" onClick={()=>setOpen(false)} aria-label="Close">×</button></div><form onSubmit={submit}><div className="formGrid">{fields.map((f)=><label className={f.type==="textarea"?"fullField":""} key={f.name}><span>{f.label}{f.required&&" *"}</span>{f.type==="textarea"?<textarea name={f.name} placeholder={f.placeholder} required={f.required}/>:f.type==="select"?<select name={f.name} required={f.required} defaultValue=""><option value="" disabled>Select {f.label.toLowerCase()}</option>{f.options?.map(o=><option key={o}>{o}</option>)}</select>:<input name={f.name} type={f.type??"text"} placeholder={f.placeholder} required={f.required}/>}</label>)}</div><div className="modalActions"><button type="button" className="ghost" onClick={()=>setOpen(false)}>Cancel</button><button type="submit" className="primary">{saved?"Created ✓":`Create ${entity}`}</button></div></form></section></div>}</>
+}
