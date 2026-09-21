@@ -1,21 +1,250 @@
-generator client { provider = "prisma-client-js" }
-datasource db { provider = "postgresql" url = env("DATABASE_URL") }
-enum TenantStatus { TRIAL ACTIVE SUSPENDED CANCELLED }
-enum LeadStatus { NEW CONTACTED QUALIFIED PROPOSAL WON LOST }
-enum ActivityType { NOTE CALL EMAIL MEETING TASK STATUS_CHANGE }
-enum SopRunStatus { NOT_STARTED IN_PROGRESS BLOCKED COMPLETED CANCELLED }
-model Tenant { id String @id @default(cuid()) name String slug String @unique status TenantStatus @default(TRIAL) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt users TenantUser[] roles Role[] leads Lead[] pipelines Pipeline[] sops Sop[] subscription Subscription? }
-model User { id String @id @default(cuid()) email String @unique passwordHash String firstName String lastName String active Boolean @default(true) createdAt DateTime @default(now()) tenants TenantUser[] ownedLeads Lead[] @relation("LeadOwner") activities Activity[] sopRuns SopRun[] @relation("SopRunOwner") }
-model TenantUser { id String @id @default(cuid()) tenantId String userId String roleId String? createdAt DateTime @default(now()) tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Cascade) user User @relation(fields:[userId],references:[id],onDelete:Cascade) role Role? @relation(fields:[roleId],references:[id],onDelete:SetNull) @@unique([tenantId,userId]) @@index([tenantId]) }
-model Role { id String @id @default(cuid()) tenantId String name String description String? tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Cascade) members TenantUser[] permissions RolePermission[] @@unique([tenantId,name]) }
-model Permission { id String @id @default(cuid()) key String @unique description String? roles RolePermission[] }
-model RolePermission { roleId String permissionId String role Role @relation(fields:[roleId],references:[id],onDelete:Cascade) permission Permission @relation(fields:[permissionId],references:[id],onDelete:Cascade) @@id([roleId,permissionId]) }
-model Lead { id String @id @default(cuid()) tenantId String ownerId String? firstName String lastName String email String? phone String? company String? title String? source String? status LeadStatus @default(NEW) score Int @default(0) estimatedValue Decimal @default(0) @db.Decimal(14,2) nextFollowUpAt DateTime? createdAt DateTime @default(now()) updatedAt DateTime @updatedAt tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Cascade) owner User? @relation("LeadOwner",fields:[ownerId],references:[id],onDelete:SetNull) activities Activity[] sopRuns SopRun[] @@index([tenantId,status]) @@index([tenantId,ownerId]) }
-model Pipeline { id String @id @default(cuid()) tenantId String name String isDefault Boolean @default(false) tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Cascade) stages PipelineStage[] @@unique([tenantId,name]) }
-model PipelineStage { id String @id @default(cuid()) pipelineId String name String position Int probability Int @default(0) pipeline Pipeline @relation(fields:[pipelineId],references:[id],onDelete:Cascade) @@unique([pipelineId,position]) }
-model Activity { id String @id @default(cuid()) tenantId String leadId String? userId String type ActivityType subject String body String? dueAt DateTime? completedAt DateTime? createdAt DateTime @default(now()) lead Lead? @relation(fields:[leadId],references:[id],onDelete:Cascade) user User @relation(fields:[userId],references:[id],onDelete:Cascade) @@index([tenantId,leadId]) }
-model Sop { id String @id @default(cuid()) tenantId String name String description String? active Boolean @default(true) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Cascade) steps SopStep[] runs SopRun[] @@unique([tenantId,name]) @@index([tenantId,active]) }
-model SopStep { id String @id @default(cuid()) sopId String name String description String? position Int dueAfterHours Int? required Boolean @default(true) sop Sop @relation(fields:[sopId],references:[id],onDelete:Cascade) runSteps SopRunStep[] @@unique([sopId,position]) }
-model SopRun { id String @id @default(cuid()) sopId String leadId String? ownerId String? status SopRunStatus @default(NOT_STARTED) startedAt DateTime? completedAt DateTime? createdAt DateTime @default(now()) sop Sop @relation(fields:[sopId],references:[id],onDelete:Cascade) lead Lead? @relation(fields:[leadId],references:[id],onDelete:SetNull) owner User? @relation("SopRunOwner",fields:[ownerId],references:[id],onDelete:SetNull) steps SopRunStep[] @@index([sopId,status]) @@index([leadId]) }
-model SopRunStep { id String @id @default(cuid()) runId String stepId String status SopRunStatus @default(NOT_STARTED) dueAt DateTime? completedAt DateTime? note String? run SopRun @relation(fields:[runId],references:[id],onDelete:Cascade) step SopStep @relation(fields:[stepId],references:[id],onDelete:Cascade) @@unique([runId,stepId]) }
-model Subscription { id String @id @default(cuid()) tenantId String @unique plan String status String seats Int @default(1) startsAt DateTime @default(now()) endsAt DateTime? tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Cascade) }
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  WON
+  LOST
+}
+
+enum ActivityType {
+  NOTE
+  CALL
+  EMAIL
+  MEETING
+  TASK
+  STATUS_CHANGE
+}
+
+enum SopRunStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  CANCELLED
+}
+
+model Tenant {
+  id           String        @id @default(cuid())
+  name         String
+  slug         String        @unique
+  status       TenantStatus  @default(TRIAL)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  users        TenantUser[]
+  roles        Role[]
+  leads        Lead[]
+  pipelines    Pipeline[]
+  sops         Sop[]
+  subscription Subscription?
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  tenants      TenantUser[]
+  ownedLeads   Lead[]       @relation("LeadOwner")
+  activities   Activity[]
+  sopRuns      SopRun[]     @relation("SopRunOwner")
+}
+
+model TenantUser {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  roleId    String?
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members     TenantUser[]
+  permissions RolePermission[]
+
+  @@unique([tenantId, name])
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model Lead {
+  id             String      @id @default(cuid())
+  tenantId       String
+  ownerId        String?
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+  company        String?
+  title          String?
+  source         String?
+  status         LeadStatus  @default(NEW)
+  score          Int         @default(0)
+  estimatedValue Decimal     @default(0) @db.Decimal(14, 2)
+  nextFollowUpAt DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner          User?       @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  activities     Activity[]
+  sopRuns        SopRun[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, ownerId])
+}
+
+model Pipeline {
+  id        String          @id @default(cuid())
+  tenantId  String
+  name      String
+  isDefault Boolean         @default(false)
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stages    PipelineStage[]
+
+  @@unique([tenantId, name])
+}
+
+model PipelineStage {
+  id          String   @id @default(cuid())
+  pipelineId  String
+  name        String
+  position    Int
+  probability Int      @default(0)
+  pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@unique([pipelineId, position])
+}
+
+model Activity {
+  id          String       @id @default(cuid())
+  tenantId    String
+  leadId      String?
+  userId      String
+  type        ActivityType
+  subject     String
+  body        String?
+  dueAt       DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, leadId])
+}
+
+model Sop {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  steps       SopStep[]
+  runs        SopRun[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, active])
+}
+
+model SopStep {
+  id            String       @id @default(cuid())
+  sopId         String
+  name          String
+  description   String?
+  position      Int
+  dueAfterHours Int?
+  required      Boolean      @default(true)
+  sop           Sop          @relation(fields: [sopId], references: [id], onDelete: Cascade)
+  runSteps      SopRunStep[]
+
+  @@unique([sopId, position])
+}
+
+model SopRun {
+  id          String       @id @default(cuid())
+  sopId       String
+  leadId      String?
+  ownerId     String?
+  status      SopRunStatus @default(NOT_STARTED)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  sop         Sop          @relation(fields: [sopId], references: [id], onDelete: Cascade)
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  owner       User?        @relation("SopRunOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  steps       SopRunStep[]
+
+  @@index([sopId, status])
+  @@index([leadId])
+}
+
+model SopRunStep {
+  id          String       @id @default(cuid())
+  runId       String
+  stepId      String
+  status      SopRunStatus @default(NOT_STARTED)
+  dueAt       DateTime?
+  completedAt DateTime?
+  note        String?
+  run         SopRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  step        SopStep      @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, stepId])
+}
+
+model Subscription {
+  id       String   @id @default(cuid())
+  tenantId String   @unique
+  plan     String
+  status   String
+  seats    Int      @default(1)
+  startsAt DateTime @default(now())
+  endsAt   DateTime?
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
