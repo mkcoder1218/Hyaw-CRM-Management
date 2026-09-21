@@ -1,1 +1,256 @@
-import {Button} from "../components/ui/button";import {Card,CardContent,CardDescription,CardHeader,CardTitle} from "../components/ui/card";import {Badge} from "../components/ui/badge";import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from "../components/ui/table";const tenants=[["Nova Retail","38","Growth","Active"],["Orbit Logistics","21","Growth","Active"],["Acme Ethiopia","12","Starter","Active"],["Blue Nile Foods","8","Starter","Trial"]];export default function AdminPage(){return <main><aside><h1>Hyaw <span>Admin</span></h1>{["Overview","Businesses","Subscriptions","Users","Permissions","Audit log","Platform settings"].map((x,i)=><Button variant={i===0?"default":"ghost"} key={x}>{x}</Button>)}</aside><section className="content"><header><div><small>Platform administration</small><h2>Overview</h2><p>Manage tenants, subscriptions and platform access.</p></div><Button>+ Add business</Button></header><div className="cards">{[["Businesses","42","+5 this month"],["Active users","683","Across all tenants"],["MRR","ETB 486K","+11.2% this month"],["Trials","9","4 ending this week"]].map(x=><Card key={x[0]}><CardContent><span>{x[0]}</span><b>{x[1]}</b><small>{x[2]}</small></CardContent></Card>)}</div><Card><CardHeader className="head"><div><CardTitle>Businesses</CardTitle><CardDescription>Recent tenant activity</CardDescription></div><Button variant="outline" size="sm">View all</Button></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Business</TableHead><TableHead>Users</TableHead><TableHead>Plan</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{tenants.map(t=><TableRow key={t[0]}><TableCell><strong>{t[0]}</strong></TableCell><TableCell>{t[1]}</TableCell><TableCell>{t[2]}</TableCell><TableCell><Badge>{t[3]}</Badge></TableCell></TableRow>)}</TableBody></Table></CardContent></Card></section></main>}
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  Building2,
+  CreditCard,
+  LayoutDashboard,
+  Settings,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
+import { Button } from "../components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
+
+type Section =
+  | "overview"
+  | "businesses"
+  | "subscriptions"
+  | "users"
+  | "permissions"
+  | "audit"
+  | "settings";
+
+type Tenant = {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  userCount: number;
+  plan: string;
+  subscriptionStatus: string | null;
+};
+
+type Overview = {
+  businesses: number;
+  activeUsers: number;
+  activeSubscriptions: number;
+  trials: number;
+};
+
+const apiUrl =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
+  "http://localhost:4000/api";
+
+const nav = [
+  ["overview", "Overview", LayoutDashboard],
+  ["businesses", "Businesses", Building2],
+  ["subscriptions", "Subscriptions", CreditCard],
+  ["users", "Users", Users],
+  ["permissions", "Permissions", ShieldCheck],
+  ["audit", "Audit log", Activity],
+  ["settings", "Platform settings", Settings],
+] as const;
+
+export default function AdminPage() {
+  const [section, setSection] = useState<Section>("overview");
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [overview, setOverview] = useState<Overview>({
+    businesses: 0,
+    activeUsers: 0,
+    activeSubscriptions: 0,
+    trials: 0,
+  });
+  const [apiState, setApiState] = useState<"loading" | "online" | "offline">(
+    "loading",
+  );
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`${apiUrl}/health`).then((response) => {
+        if (!response.ok) throw new Error("API unavailable");
+        return response.json();
+      }),
+      fetch(`${apiUrl}/admin/overview`).then((response) => {
+        if (!response.ok) throw new Error("Overview unavailable");
+        return response.json();
+      }),
+      fetch(`${apiUrl}/admin/tenants`).then((response) => {
+        if (!response.ok) throw new Error("Businesses unavailable");
+        return response.json();
+      }),
+    ])
+      .then(([, overviewResponse, tenantResponse]) => {
+        setOverview(overviewResponse.data);
+        setTenants(tenantResponse.data);
+        setApiState("online");
+      })
+      .catch(() => setApiState("offline"));
+  }, []);
+
+  const title = useMemo(
+    () => nav.find(([key]) => key === section)?.[1] ?? "Overview",
+    [section],
+  );
+
+  return (
+    <main>
+      <aside>
+        <h1>
+          Hyaw <span>Admin</span>
+        </h1>
+        <nav>
+          {nav.map(([key, label, Icon]) => (
+            <Button
+              key={key}
+              type="button"
+              variant={section === key ? "default" : "ghost"}
+              onClick={() => setSection(key)}
+            >
+              <Icon size={16} />
+              {label}
+            </Button>
+          ))}
+        </nav>
+      </aside>
+
+      <section className="content">
+        <header>
+          <div>
+            <small>Platform administration</small>
+            <h2>{title}</h2>
+            <p>
+              {apiState === "online"
+                ? "Connected to the Hyaw CRM API."
+                : apiState === "offline"
+                  ? `API cannot be reached at ${apiUrl}. Check the API process and PostgreSQL.`
+                  : "Checking API connection..."}
+            </p>
+          </div>
+          {section === "businesses" || section === "overview" ? (
+            <Button type="button" onClick={() => setSection("businesses")}>
+              + Add business
+            </Button>
+          ) : null}
+        </header>
+
+        {section === "overview" ? (
+          <>
+            <div className="cards">
+              <Metric label="Businesses" value={overview.businesses} detail="All tenants" />
+              <Metric label="Active users" value={overview.activeUsers} detail="Across all tenants" />
+              <Metric
+                label="Subscriptions"
+                value={overview.activeSubscriptions}
+                detail="Currently active"
+              />
+              <Metric label="Trials" value={overview.trials} detail="Trial businesses" />
+            </div>
+            <BusinessesTable tenants={tenants} />
+          </>
+        ) : section === "businesses" ? (
+          <BusinessesTable tenants={tenants} />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>{title}</CardTitle>
+              <CardDescription>
+                This section is connected to admin navigation and ready for its
+                platform-management workflow.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p>
+                The backend foundation is running through the admin API. Add
+                module-specific actions here as the platform rules are defined.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+}) {
+  return (
+    <Card>
+      <CardContent>
+        <span>{label}</span>
+        <b>{value}</b>
+        <small>{detail}</small>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BusinessesTable({ tenants }: { tenants: Tenant[] }) {
+  return (
+    <Card>
+      <CardHeader className="head">
+        <div>
+          <CardTitle>Businesses</CardTitle>
+          <CardDescription>Tenant activity from the backend</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Business</TableHead>
+              <TableHead>Users</TableHead>
+              <TableHead>Plan</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {tenants.length ? (
+              tenants.map((tenant) => (
+                <TableRow key={tenant.id}>
+                  <TableCell>
+                    <strong>{tenant.name}</strong>
+                  </TableCell>
+                  <TableCell>{tenant.userCount}</TableCell>
+                  <TableCell>{tenant.plan}</TableCell>
+                  <TableCell>
+                    <Badge>{tenant.status}</Badge>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={4}>
+                  No businesses yet. The table no longer uses hard-coded demo data.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}

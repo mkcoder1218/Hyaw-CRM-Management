@@ -1,14 +1,67 @@
 import { Router } from "express";
 import { z } from "zod";
+import { prisma } from "../db";
 
-export const sopsRouter=Router();
-const step=z.object({name:z.string().min(1),description:z.string().optional(),dueAfterHours:z.number().int().nonnegative().optional(),required:z.boolean().default(true)});
-const sop=z.object({name:z.string().min(2),description:z.string().optional(),active:z.boolean().default(true),steps:z.array(step).min(1)});
+export const sopsRouter = Router();
 
-const demo=[
- {id:"sop-1",name:"New lead qualification",description:"Consistent first-touch and qualification process.",active:true,runs:18,completion:82,steps:[{name:"Review lead profile",dueAfterHours:1},{name:"First contact",dueAfterHours:4},{name:"Qualify need and budget",dueAfterHours:24},{name:"Set next action",dueAfterHours:26}]},
- {id:"sop-2",name:"Proposal follow-up",description:"Follow every proposal until a decision is recorded.",active:true,runs:9,completion:67,steps:[{name:"Confirm proposal received",dueAfterHours:4},{name:"Follow up",dueAfterHours:48},{name:"Record decision",dueAfterHours:96}]}
-];
+const stepSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  dueAfterHours: z.number().int().nonnegative().optional(),
+  required: z.boolean().default(true),
+});
 
-sopsRouter.get("/",(_req,res)=>res.json({data:demo}));
-sopsRouter.post("/",(req,res)=>{const parsed=sop.safeParse(req.body);if(!parsed.success)return res.status(400).json({message:"Invalid SOP",issues:parsed.error.issues});return res.status(201).json({id:crypto.randomUUID(),...parsed.data,createdAt:new Date().toISOString()});});
+const sopSchema = z.object({
+  tenantId: z.string().min(1),
+  name: z.string().min(2),
+  description: z.string().optional(),
+  active: z.boolean().default(true),
+  steps: z.array(stepSchema).min(1),
+});
+
+sopsRouter.get("/", async (req, res, next) => {
+  try {
+    const tenantId =
+      typeof req.query.tenantId === "string" ? req.query.tenantId : undefined;
+    const sops = await prisma.sop.findMany({
+      where: tenantId ? { tenantId } : undefined,
+      orderBy: { createdAt: "desc" },
+      include: {
+        steps: { orderBy: { position: "asc" } },
+        _count: { select: { runs: true } },
+      },
+    });
+    res.json({ data: sops });
+  } catch (error) {
+    next(error);
+  }
+});
+
+sopsRouter.post("/", async (req, res, next) => {
+  try {
+    const parsed = sopSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ message: "Invalid SOP", issues: parsed.error.issues });
+      return;
+    }
+
+    const { steps, ...data } = parsed.data;
+    const sop = await prisma.sop.create({
+      data: {
+        ...data,
+        steps: {
+          create: steps.map((step, index) => ({
+            ...step,
+            position: index + 1,
+          })),
+        },
+      },
+      include: { steps: { orderBy: { position: "asc" } } },
+    });
+    res.status(201).json({ data: sop });
+  } catch (error) {
+    next(error);
+  }
+});
