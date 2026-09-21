@@ -9,6 +9,11 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  MoreVertical,
+  Pencil,
+  Settings2,
+  UserRoundCog,
+  Ban,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import {
@@ -77,6 +82,7 @@ export default function AdminPage() {
     activeSubscriptions: 0,
     trials: 0,
   });
+  const [businessMenu, setBusinessMenu] = useState<string | null>(null);
   const [apiState, setApiState] = useState<"loading" | "online" | "offline">(
     "loading",
   );
@@ -170,10 +176,10 @@ export default function AdminPage() {
               />
               <Metric label="Trials" value={overview.trials} detail="Trial businesses" />
             </div>
-            <BusinessesTable tenants={tenants} />
+            <BusinessesTable tenants={tenants} openMenu={businessMenu} setOpenMenu={setBusinessMenu} />
           </>
         ) : section === "businesses" ? (
-          <BusinessesTable tenants={tenants} />
+          <BusinessesTable tenants={tenants} openMenu={businessMenu} setOpenMenu={setBusinessMenu} />
         ) : (
           <Card>
             <CardHeader>
@@ -216,7 +222,7 @@ function Metric({
   );
 }
 
-function BusinessesTable({ tenants }: { tenants: Tenant[] }) {
+function BusinessesTable({ tenants, openMenu, setOpenMenu }: { tenants: Tenant[]; openMenu: string | null; setOpenMenu: (id: string | null) => void }) {
   return (
     <Card>
       <CardHeader className="head">
@@ -233,6 +239,7 @@ function BusinessesTable({ tenants }: { tenants: Tenant[] }) {
               <TableHead>Users</TableHead>
               <TableHead>Plan</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="actions-head">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -247,11 +254,27 @@ function BusinessesTable({ tenants }: { tenants: Tenant[] }) {
                   <TableCell>
                     <Badge>{tenant.status}</Badge>
                   </TableCell>
+                  <TableCell className="business-actions">
+                    <button className="business-menu-trigger" type="button" aria-label={`Actions for ${tenant.name}`} onClick={() => setOpenMenu(openMenu === tenant.id ? null : tenant.id)}>
+                      <MoreVertical size={18} />
+                    </button>
+                    {openMenu === tenant.id ? (
+                      <div className="business-menu">
+                        <button type="button"><Pencil size={15}/><span><strong>Edit business</strong><small>Name, slug and status</small></span></button>
+                        <button type="button"><CreditCard size={15}/><span><strong>Subscription</strong><small>Plan, seats and billing status</small></span></button>
+                        <button type="button"><UserRoundCog size={15}/><span><strong>Manage users</strong><small>Members and access</small></span></button>
+                        <button type="button"><ShieldCheck size={15}/><span><strong>Roles & permissions</strong><small>Business access rules</small></span></button>
+                        <button type="button"><Settings2 size={15}/><span><strong>Business settings</strong><small>Workspace configuration</small></span></button>
+                        <div className="business-menu-separator"/>
+                        <button type="button" className="danger"><Ban size={15}/><span><strong>{tenant.status === "SUSPENDED" ? "Reactivate business" : "Suspend business"}</strong><small>Control workspace access</small></span></button>
+                      </div>
+                    ) : null}
+                  </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={4}>
+                <TableCell colSpan={5}>
                   No businesses yet. The table no longer uses hard-coded demo data.
                 </TableCell>
               </TableRow>
