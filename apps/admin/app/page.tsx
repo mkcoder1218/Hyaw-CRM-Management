@@ -83,15 +83,17 @@ export default function AdminPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${apiUrl}/health`).then((response) => {
+      fetch(`${apiUrl}/health`, { credentials: "include" }).then((response) => {
         if (!response.ok) throw new Error("API unavailable");
         return response.json();
       }),
-      fetch(`${apiUrl}/admin/overview`).then((response) => {
+      fetch(`${apiUrl}/admin/overview`, { credentials: "include" }).then((response) => {
+        if (response.status === 401 || response.status === 403) throw new Error("ADMIN_AUTH");
         if (!response.ok) throw new Error("Overview unavailable");
         return response.json();
       }),
-      fetch(`${apiUrl}/admin/tenants`).then((response) => {
+      fetch(`${apiUrl}/admin/tenants`, { credentials: "include" }).then((response) => {
+        if (response.status === 401 || response.status === 403) throw new Error("ADMIN_AUTH");
         if (!response.ok) throw new Error("Businesses unavailable");
         return response.json();
       }),
@@ -101,7 +103,13 @@ export default function AdminPage() {
         setTenants(tenantResponse.data);
         setApiState("online");
       })
-      .catch(() => setApiState("offline"));
+      .catch((error) => {
+        if (error instanceof Error && error.message === "ADMIN_AUTH") {
+          window.location.assign("/login");
+          return;
+        }
+        setApiState("offline");
+      });
   }, []);
 
   const title = useMemo(
