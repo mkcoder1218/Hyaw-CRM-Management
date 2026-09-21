@@ -275,3 +275,10 @@ model AuditLog {
 
   @@index([tenantId, createdAt])
 }
+
+model PlatformSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}

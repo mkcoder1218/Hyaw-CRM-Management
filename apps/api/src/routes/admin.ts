@@ -41,6 +41,15 @@ const tenantSettingsSchema = z.object({
 });
 const membershipSchema = z.object({ roleId: z.string().min(1).nullable().optional(), active: z.boolean().optional() });
 const rolePermissionsSchema = z.object({ permissionIds: z.array(z.string()).default([]) });
+const userUpdateSchema = z.object({ active: z.boolean() });
+const platformSettingsSchema = z.object({
+  platformName: z.string().min(2),
+  supportEmail: z.string().email(),
+  defaultPlan: z.string().min(1),
+  defaultSeats: z.number().int().positive(),
+  allowTrials: z.boolean(),
+  trialDays: z.number().int().min(0).max(365),
+});
 
 async function audit(actorId: string, action: string, entity: string, entityId?: string, tenantId?: string, metadata?: object) {
   await prisma.auditLog.create({ data: { actorId, action, entity, entityId, tenantId, metadata } });
@@ -142,6 +151,34 @@ adminRouter.get("/tenants/:id/roles", async (req, res, next) => {
     });
     const permissions = await prisma.permission.findMany({ orderBy: { key: "asc" } });
     res.json({ data: { roles, permissions } });
+  } catch (error) { next(error); }
+});
+
+adminRouter.patch("/users/:id", async (req, res, next) => {
+  try {
+    const parsed = userUpdateSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid user update", issues: parsed.error.issues }); return; }
+    const user = await prisma.user.update({ where: { id: req.params.id }, data: parsed.data, select: { id: true, email: true, firstName: true, lastName: true, active: true } });
+    await audit(req.auth!.userId, "USER_UPDATED", "User", user.id, undefined, parsed.data);
+    res.json({ data: user });
+  } catch (error) { next(error); }
+});
+
+adminRouter.get("/settings", async (_req, res, next) => {
+  try {
+    const rows = await prisma.platformSetting.findMany();
+    const stored = Object.fromEntries(rows.map(row => [row.key, JSON.parse(row.value)]));
+    res.json({ data: { platformName: "Hyaw CRM", supportEmail: "support@hyaw.tech", defaultPlan: "Starter", defaultSeats: 5, allowTrials: true, trialDays: 14, ...stored } });
+  } catch (error) { next(error); }
+});
+
+adminRouter.put("/settings", async (req, res, next) => {
+  try {
+    const parsed = platformSettingsSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid platform settings", issues: parsed.error.issues }); return; }
+    await prisma.$transaction(Object.entries(parsed.data).map(([key, value]) => prisma.platformSetting.upsert({ where: { key }, update: { value: JSON.stringify(value) }, create: { key, value: JSON.stringify(value) } })));
+    await audit(req.auth!.userId, "PLATFORM_SETTINGS_UPDATED", "PlatformSetting", undefined, undefined, parsed.data);
+    res.json({ data: parsed.data });
   } catch (error) { next(error); }
 });
 
