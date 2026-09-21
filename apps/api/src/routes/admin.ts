@@ -1,8 +1,18 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
+import { requireAuth } from "../auth";
 
 export const adminRouter = Router();
+
+adminRouter.use(requireAuth);
+adminRouter.use((req, res, next) => {
+  if (req.auth?.role !== "SUPER_ADMIN") {
+    res.status(403).json({ message: "Super admin access required" });
+    return;
+  }
+  next();
+});
 
 const createTenantSchema = z.object({
   name: z.string().min(2),
