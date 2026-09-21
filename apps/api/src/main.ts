@@ -7,6 +7,7 @@ import { healthRouter } from "./routes/health";
 import { leadsRouter } from "./routes/leads";
 import { sopsRouter } from "./routes/sops";
 import { adminRouter } from "./routes/admin";
+import { authRouter } from "./routes/auth";
 
 const app = express();
 const port = Number(process.env.API_PORT ?? 4000);
@@ -25,6 +26,7 @@ app.use("/api/health", healthRouter);
 app.use("/api/leads", leadsRouter);
 app.use("/api/sops", sopsRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/auth", authRouter);
 
 app.use((req, res) =>
   res.status(404).json({ message: "Route not found", path: req.path }),

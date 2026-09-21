@@ -1,1 +1,15 @@
-"use client";import Link from "next/link";import {usePathname} from "next/navigation";import type{ReactNode}from"react";import {Button} from "../../components/ui/button";const items=[["Overview","/"],["Leads","/leads"],["Contacts","/contacts"],["Companies","/companies"],["Opportunities","/opportunities"],["Pipeline","/pipeline"],["Activities","/activities"],["Tasks","/tasks"],["SOP Process","/sop"],["Reports","/reports"]],bottom=[["Team","/team"],["Roles & permissions","/roles"],["Settings","/settings"]];export function AppShell({children}:{children:ReactNode}){const pathname=usePathname(),active=(h:string)=>h==="/"?pathname==="/":pathname===h||pathname.startsWith(h+"/");return <main className="shell"><aside className="sidebar"><Link href="/" className="brand"><div className="mark">H</div><div><strong>Hyaw CRM</strong><span>Sales workspace</span></div></Link><nav>{items.map(([l,h])=><Button asChild variant={active(h)?"default":"ghost"} key={h}><Link href={h}>{l}</Link></Button>)}</nav><div className="sidebarBottom">{bottom.map(([l,h])=><Button asChild variant={active(h)?"default":"ghost"} key={h}><Link href={h}>{l}</Link></Button>)}<div className="profile"><div className="avatar">MK</div><div><strong>Mikeyas</strong><span>Workspace owner</span></div></div></div></aside><section className="content">{children}</section></main>}
+"use client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+import { Button } from "../../components/ui/button";
+
+const items=[["Overview","/"],["Leads","/leads"],["Contacts","/contacts"],["Companies","/companies"],["Opportunities","/opportunities"],["Pipeline","/pipeline"],["Activities","/activities"],["Tasks","/tasks"],["SOP Process","/sop"],["Reports","/reports"]];
+const bottom=[["Team","/team"],["Roles & permissions","/roles"],["Settings","/settings"]];
+
+export function AppShell({children}:{children:ReactNode}){
+  const pathname=usePathname();
+  if(pathname==="/login") return <>{children}</>;
+  const active=(h:string)=>h==="/"?pathname==="/":pathname===h||pathname.startsWith(h+"/");
+  return <main className="shell"><aside className="sidebar"><Link href="/" className="brand"><div className="mark">H</div><div><strong>Hyaw CRM</strong><span>Sales workspace</span></div></Link><nav>{items.map(([l,h])=><Button asChild variant={active(h)?"default":"ghost"} key={h}><Link href={h}>{l}</Link></Button>)}</nav><div className="sidebarBottom">{bottom.map(([l,h])=><Button asChild variant={active(h)?"default":"ghost"} key={h}><Link href={h}>{l}</Link></Button>)}</div></aside><section className="content">{children}</section></main>
+}
