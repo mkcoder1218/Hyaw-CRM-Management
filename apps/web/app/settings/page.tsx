@@ -1,1 +1,1 @@
-import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Settings" description="Configure your CRM workspace and preferences."/>}
+import {WorkspaceModulePage} from "../components/workspace-module-page";export default function Page(){return <WorkspaceModulePage kind="settings" title="Settings" description="Configure this CRM workspace and save changes to the database."/>}

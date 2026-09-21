@@ -1,1 +1,1 @@
-import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Team" description="Manage workspace members and assignments."/>}
+import {WorkspaceModulePage} from "../components/workspace-module-page";export default function Page(){return <WorkspaceModulePage kind="team" title="Team" description="Workspace members, roles and account status."/>}

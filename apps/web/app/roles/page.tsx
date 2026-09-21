@@ -1,1 +1,1 @@
-import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Roles & permissions" description="Role names categorize people; permissions control access."/>}
+import {WorkspaceModulePage} from "../components/workspace-module-page";export default function Page(){return <WorkspaceModulePage kind="roles" title="Roles & permissions" description="Real roles and permissions assigned to this workspace."/>}

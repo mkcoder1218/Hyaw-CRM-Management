@@ -1,1 +1,1 @@
-import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Contacts" description="Manage the people behind your customer relationships."/>}
+import {WorkspaceDataPage} from "../components/workspace-data-page";export default function Page(){return <WorkspaceDataPage title="Contacts" description="Manage the people behind your customer relationships."/>}

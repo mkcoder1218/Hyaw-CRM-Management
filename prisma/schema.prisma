@@ -55,6 +55,10 @@ model Tenant {
   subscription Subscription?
   settings     TenantSetting[]
   auditLogs    AuditLog[]
+  companies    Company[]
+  contacts     Contact[]
+  opportunities Opportunity[]
+  crmTasks     CrmTask[]
 }
 
 model User {
@@ -281,4 +285,66 @@ model PlatformSetting {
   key       String   @unique
   value     String
   updatedAt DateTime @updatedAt
+}
+
+
+model Company {
+  id String @id @default(cuid())
+  tenantId String
+  name String
+  industry String?
+  phone String?
+  email String?
+  website String?
+  address String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, name])
+}
+
+model Contact {
+  id String @id @default(cuid())
+  tenantId String
+  name String
+  email String?
+  phone String?
+  company String?
+  jobTitle String?
+  notes String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, name])
+}
+
+model Opportunity {
+  id String @id @default(cuid())
+  tenantId String
+  name String
+  company String?
+  value Decimal @default(0) @db.Decimal(14, 2)
+  stage LeadStatus @default(NEW)
+  closeDate DateTime?
+  notes String?
+  ownerId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, stage])
+}
+
+model CrmTask {
+  id String @id @default(cuid())
+  tenantId String
+  title String
+  dueDate DateTime?
+  priority String @default("MEDIUM")
+  assignee String?
+  description String?
+  completed Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, completed])
 }

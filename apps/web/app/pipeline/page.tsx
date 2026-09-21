@@ -1,1 +1,1 @@
-import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Pipeline" description="See deals by stage and keep revenue moving."/>}
+import {WorkspaceModulePage} from "../components/workspace-module-page";export default function Page(){return <WorkspaceModulePage kind="pipeline" title="Pipeline" description="See live opportunities by stage and keep revenue moving."/>}

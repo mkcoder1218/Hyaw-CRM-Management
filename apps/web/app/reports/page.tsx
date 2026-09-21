@@ -1,1 +1,1 @@
-import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Reports" description="Understand conversion, activity and sales performance."/>}
+import {WorkspaceModulePage} from "../components/workspace-module-page";export default function Page(){return <WorkspaceModulePage kind="reports" title="Reports" description="Live conversion, activity and sales performance."/>}

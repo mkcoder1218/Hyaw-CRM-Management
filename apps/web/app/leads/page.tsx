@@ -1,1 +1,1 @@
-import {PlaceholderPage} from "../components/placeholder-page";export default function Page(){return <PlaceholderPage title="Leads" description="Capture, qualify and assign incoming leads."/>}
+import {WorkspaceDataPage} from "../components/workspace-data-page";export default function Page(){return <WorkspaceDataPage title="Leads" description="Capture, qualify and assign incoming leads."/>}
