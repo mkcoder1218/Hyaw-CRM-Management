@@ -8,7 +8,7 @@ workspaceRouter.use(requireAuth);
 const tenantId = (req: any) => req.auth!.tenantId;
 const leadStage = z.enum(["NEW","CONTACTED","QUALIFIED","PROPOSAL","WON","LOST"]);
 const schemas: Record<string, z.ZodTypeAny> = {
-  leads: z.object({firstName:z.string().min(1),lastName:z.string().min(1),email:z.string().optional(),phone:z.string().optional(),company:z.string().optional(),source:z.string().optional(),estimatedValue:z.coerce.number().nonnegative().default(0)}),
+  leads: z.object({firstName:z.string().min(1),lastName:z.string().min(1),email:z.string().optional(),phone:z.string().optional(),company:z.string().optional(),title:z.string().optional(),source:z.string().optional(),status:leadStage.default("NEW"),score:z.coerce.number().int().min(0).max(100).default(0),estimatedValue:z.coerce.number().nonnegative().default(0),nextFollowUpAt:z.string().optional(),ownerId:z.string().optional()}),
   contacts: z.object({name:z.string().min(1),email:z.string().optional(),phone:z.string().optional(),company:z.string().optional(),jobTitle:z.string().optional(),notes:z.string().optional()}),
   companies: z.object({name:z.string().min(1),industry:z.string().optional(),phone:z.string().optional(),email:z.string().optional(),website:z.string().optional(),address:z.string().optional()}),
   opportunities: z.object({name:z.string().min(1),company:z.string().optional(),value:z.coerce.number().nonnegative().default(0),stage:leadStage.default("NEW"),closeDate:z.string().optional(),notes:z.string().optional()}),
@@ -48,7 +48,7 @@ workspaceRouter.post("/:resource",async(req,res,next)=>{try{
  const resource=req.params.resource,schema=schemas[resource];if(!schema){res.status(404).json({message:"Unknown CRM resource"});return}
  const parsed=schema.safeParse(req.body);if(!parsed.success){res.status(400).json({message:"Invalid data",issues:parsed.error.issues});return}
  const d:any=clean(parsed.data),tid=tenantId(req);let row:any;
- if(resource==="leads")row=await prisma.lead.create({data:{...d,tenantId:tid}});
+ if(resource==="leads")row=await prisma.lead.create({data:{...d,tenantId:tid,nextFollowUpAt:d.nextFollowUpAt?new Date(d.nextFollowUpAt):undefined}});
  else if(resource==="contacts")row=await prisma.contact.create({data:{...d,tenantId:tid}});
  else if(resource==="companies")row=await prisma.company.create({data:{...d,tenantId:tid}});
  else if(resource==="opportunities")row=await prisma.opportunity.create({data:{...d,tenantId:tid,closeDate:d.closeDate?new Date(d.closeDate):undefined}});
@@ -57,5 +57,6 @@ workspaceRouter.post("/:resource",async(req,res,next)=>{try{
  res.status(201).json({data:row});
 }catch(e){next(e)}});
 
+workspaceRouter.patch("/leads/:id",requirePermission("lead.update"),async(req,res,next)=>{try{const found=await prisma.lead.findFirst({where:{id:req.params.id,tenantId:tenantId(req)}});if(!found){res.status(404).json({message:"Lead not found"});return}const parsed=z.object({status:leadStage.optional(),ownerId:z.string().nullable().optional(),score:z.coerce.number().int().min(0).max(100).optional(),nextFollowUpAt:z.string().nullable().optional()}).safeParse(req.body);if(!parsed.success){res.status(400).json({message:"Invalid lead update",issues:parsed.error.issues});return}const d:any=parsed.data;res.json({data:await prisma.lead.update({where:{id:found.id},data:{...d,nextFollowUpAt:d.nextFollowUpAt===null?null:d.nextFollowUpAt?new Date(d.nextFollowUpAt):undefined}})})}catch(e){next(e)}});
 workspaceRouter.patch("/tasks/:id",requirePermission("task.manage"),async(req,res,next)=>{try{const found=await prisma.crmTask.findFirst({where:{id:req.params.id,tenantId:tenantId(req)}});if(!found){res.status(404).json({message:"Task not found"});return}res.json({data:await prisma.crmTask.update({where:{id:found.id},data:{completed:Boolean(req.body.completed)}})})}catch(e){next(e)}});
 workspaceRouter.put("/settings",requirePermission("settings.manage"),async(req,res,next)=>{try{const tid=tenantId(req);for(const [key,value] of Object.entries(req.body??{})){await prisma.tenantSetting.upsert({where:{tenantId_key:{tenantId:tid,key}},update:{value:String(value)},create:{tenantId:tid,key,value:String(value)}})}res.json({data:req.body})}catch(e){next(e)}});
