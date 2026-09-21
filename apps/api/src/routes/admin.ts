@@ -167,7 +167,10 @@ adminRouter.patch("/users/:id", async (req, res, next) => {
 adminRouter.get("/settings", async (_req, res, next) => {
   try {
     const rows = await prisma.platformSetting.findMany();
-    const stored = Object.fromEntries(rows.map(row => [row.key, JSON.parse(row.value)]));
+    const stored = Object.fromEntries(rows.map(row => {
+      try { return [row.key, JSON.parse(row.value)]; }
+      catch { return [row.key, row.value]; }
+    }));
     res.json({ data: { platformName: "Hyaw CRM", supportEmail: "support@hyaw.tech", defaultPlan: "Starter", defaultSeats: 5, allowTrials: true, trialDays: 14, ...stored } });
   } catch (error) { next(error); }
 });

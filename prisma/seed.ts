@@ -119,6 +119,39 @@ async function main() {
     },
   });
 
+  const platformDefaults: Record<string, unknown> = {
+    platformName: "Hyaw CRM",
+    supportEmail: "support@hyaw.tech",
+    defaultPlan: "Starter",
+    defaultSeats: 5,
+    allowTrials: true,
+    trialDays: 14,
+  };
+  for (const [key, value] of Object.entries(platformDefaults)) {
+    await prisma.platformSetting.upsert({
+      where: { key },
+      update: {},
+      create: { key, value: JSON.stringify(value) },
+    });
+  }
+
+  const superAdmin = await prisma.user.findUnique({ where: { email: "superadmin@hyaw.local" } });
+  if (superAdmin) {
+    const existingSeedAudit = await prisma.auditLog.findFirst({
+      where: { actorId: superAdmin.id, action: "PLATFORM_SEEDED", entity: "Platform" },
+    });
+    if (!existingSeedAudit) {
+      await prisma.auditLog.create({
+        data: {
+          actorId: superAdmin.id,
+          action: "PLATFORM_SEEDED",
+          entity: "Platform",
+          metadata: { tenant: "Hyaw", source: "seed" },
+        },
+      });
+    }
+  }
+
   console.log("Seeded Hyaw tenant, RBAC roles, permissions and test accounts.");
 }
 
