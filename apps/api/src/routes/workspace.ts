@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
-import { requireAuth } from "../auth";
+import { requireAuth, requireAnyPermission, requirePermission } from "../auth";
 
 export const workspaceRouter = Router();
 workspaceRouter.use(requireAuth);
@@ -17,7 +17,7 @@ const schemas: Record<string, z.ZodTypeAny> = {
 };
 const clean=(o:any)=>Object.fromEntries(Object.entries(o).filter(([,v])=>v!==""&&v!==undefined));
 
-workspaceRouter.get("/dashboard",async(req,res,next)=>{try{
+workspaceRouter.get("/dashboard",requireAnyPermission("lead.view","activity.view","task.view","opportunity.view"),async(req,res,next)=>{try{
  const tid=tenantId(req), month=new Date(new Date().getFullYear(),new Date().getMonth(),1);
  const [leads,opps,tasks]=await Promise.all([
   prisma.lead.findMany({where:{tenantId:tid},include:{owner:{select:{firstName:true,lastName:true}}},orderBy:{estimatedValue:"desc"}}),
@@ -31,19 +31,20 @@ workspaceRouter.get("/dashboard",async(req,res,next)=>{try{
  res.json({data:{stats:{openLeads:open.length,pipelineValue,wonValue,conversion:leads.length?Math.round(leads.filter(x=>x.status==="WON").length/leads.length*1000)/10:0},stages,tasks,priorityLeads:leads.slice(0,6)}});
 }catch(e){next(e)}});
 
-workspaceRouter.get("/leads",async(req,res,next)=>{try{res.json({data:await prisma.lead.findMany({where:{tenantId:tenantId(req)},include:{owner:{select:{firstName:true,lastName:true}}},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
-workspaceRouter.get("/contacts",async(req,res,next)=>{try{res.json({data:await prisma.contact.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
-workspaceRouter.get("/companies",async(req,res,next)=>{try{res.json({data:await prisma.company.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
-workspaceRouter.get("/opportunities",async(req,res,next)=>{try{res.json({data:await prisma.opportunity.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
-workspaceRouter.get("/tasks",async(req,res,next)=>{try{res.json({data:await prisma.crmTask.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
-workspaceRouter.get("/activities",async(req,res,next)=>{try{res.json({data:await prisma.activity.findMany({where:{tenantId:tenantId(req)},include:{user:{select:{firstName:true,lastName:true}},lead:{select:{firstName:true,lastName:true}}},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
-workspaceRouter.get("/pipeline",async(req,res,next)=>{try{const tid=tenantId(req);const [pipelines,opportunities]=await Promise.all([prisma.pipeline.findMany({where:{tenantId:tid},include:{stages:{orderBy:{position:"asc"}}}}),prisma.opportunity.findMany({where:{tenantId:tid}})]);res.json({data:{pipelines,opportunities}})}catch(e){next(e)}});
-workspaceRouter.get("/team",async(req,res,next)=>{try{res.json({data:await prisma.tenantUser.findMany({where:{tenantId:tenantId(req)},include:{user:{select:{id:true,firstName:true,lastName:true,email:true,active:true,createdAt:true}},role:true},orderBy:{createdAt:"asc"}})})}catch(e){next(e)}});
-workspaceRouter.get("/roles",async(req,res,next)=>{try{res.json({data:await prisma.role.findMany({where:{tenantId:tenantId(req)},include:{permissions:{include:{permission:true}},_count:{select:{members:true}}},orderBy:{name:"asc"}})})}catch(e){next(e)}});
-workspaceRouter.get("/settings",async(req,res,next)=>{try{const rows=await prisma.tenantSetting.findMany({where:{tenantId:tenantId(req)}});res.json({data:Object.fromEntries(rows.map(x=>[x.key,x.value]))})}catch(e){next(e)}});
-workspaceRouter.get("/reports",async(req,res,next)=>{try{const tid=tenantId(req);const [leads,activities,opps]=await Promise.all([prisma.lead.findMany({where:{tenantId:tid}}),prisma.activity.count({where:{tenantId:tid}}),prisma.opportunity.findMany({where:{tenantId:tid}})]);res.json({data:{leads:leads.length,won:leads.filter(x=>x.status==="WON").length,lost:leads.filter(x=>x.status==="LOST").length,activities,pipeline:opps.reduce((s,x)=>s+Number(x.value),0),byStage:["NEW","CONTACTED","QUALIFIED","PROPOSAL","WON","LOST"].map(stage=>({stage,count:leads.filter(x=>x.status===stage).length}))}})}catch(e){next(e)}});
+workspaceRouter.get("/leads",requirePermission("lead.view"),async(req,res,next)=>{try{res.json({data:await prisma.lead.findMany({where:{tenantId:tenantId(req)},include:{owner:{select:{firstName:true,lastName:true}}},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
+workspaceRouter.get("/contacts",requirePermission("contact.view"),async(req,res,next)=>{try{res.json({data:await prisma.contact.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
+workspaceRouter.get("/companies",requirePermission("company.view"),async(req,res,next)=>{try{res.json({data:await prisma.company.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
+workspaceRouter.get("/opportunities",requirePermission("opportunity.view"),async(req,res,next)=>{try{res.json({data:await prisma.opportunity.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
+workspaceRouter.get("/tasks",requirePermission("task.view"),async(req,res,next)=>{try{res.json({data:await prisma.crmTask.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
+workspaceRouter.get("/activities",requirePermission("activity.view"),async(req,res,next)=>{try{res.json({data:await prisma.activity.findMany({where:{tenantId:tenantId(req)},include:{user:{select:{firstName:true,lastName:true}},lead:{select:{firstName:true,lastName:true}}},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
+workspaceRouter.get("/pipeline",requirePermission("opportunity.view"),async(req,res,next)=>{try{const tid=tenantId(req);const [pipelines,opportunities]=await Promise.all([prisma.pipeline.findMany({where:{tenantId:tid},include:{stages:{orderBy:{position:"asc"}}}}),prisma.opportunity.findMany({where:{tenantId:tid}})]);res.json({data:{pipelines,opportunities}})}catch(e){next(e)}});
+workspaceRouter.get("/team",requirePermission("team.view"),async(req,res,next)=>{try{res.json({data:await prisma.tenantUser.findMany({where:{tenantId:tenantId(req)},include:{user:{select:{id:true,firstName:true,lastName:true,email:true,active:true,createdAt:true}},role:true},orderBy:{createdAt:"asc"}})})}catch(e){next(e)}});
+workspaceRouter.get("/roles",requirePermission("role.manage"),async(req,res,next)=>{try{res.json({data:await prisma.role.findMany({where:{tenantId:tenantId(req)},include:{permissions:{include:{permission:true}},_count:{select:{members:true}}},orderBy:{name:"asc"}})})}catch(e){next(e)}});
+workspaceRouter.get("/settings",requirePermission("settings.manage"),async(req,res,next)=>{try{const rows=await prisma.tenantSetting.findMany({where:{tenantId:tenantId(req)}});res.json({data:Object.fromEntries(rows.map(x=>[x.key,x.value]))})}catch(e){next(e)}});
+workspaceRouter.get("/reports",requirePermission("report.view"),async(req,res,next)=>{try{const tid=tenantId(req);const [leads,activities,opps]=await Promise.all([prisma.lead.findMany({where:{tenantId:tid}}),prisma.activity.count({where:{tenantId:tid}}),prisma.opportunity.findMany({where:{tenantId:tid}})]);res.json({data:{leads:leads.length,won:leads.filter(x=>x.status==="WON").length,lost:leads.filter(x=>x.status==="LOST").length,activities,pipeline:opps.reduce((s,x)=>s+Number(x.value),0),byStage:["NEW","CONTACTED","QUALIFIED","PROPOSAL","WON","LOST"].map(stage=>({stage,count:leads.filter(x=>x.status===stage).length}))}})}catch(e){next(e)}});
 
 workspaceRouter.post("/:resource",async(req,res,next)=>{try{
+ const needed:Record<string,string>={leads:"lead.create",contacts:"contact.manage",companies:"company.manage",opportunities:"opportunity.manage",tasks:"task.manage",activities:"activity.create"};const permission=needed[req.params.resource];if(permission&&!req.auth!.permissions.includes(permission)){res.status(403).json({message:"Permission denied",permission});return}
  const resource=req.params.resource,schema=schemas[resource];if(!schema){res.status(404).json({message:"Unknown CRM resource"});return}
  const parsed=schema.safeParse(req.body);if(!parsed.success){res.status(400).json({message:"Invalid data",issues:parsed.error.issues});return}
  const d:any=clean(parsed.data),tid=tenantId(req);let row:any;
@@ -56,5 +57,5 @@ workspaceRouter.post("/:resource",async(req,res,next)=>{try{
  res.status(201).json({data:row});
 }catch(e){next(e)}});
 
-workspaceRouter.patch("/tasks/:id",async(req,res,next)=>{try{const found=await prisma.crmTask.findFirst({where:{id:req.params.id,tenantId:tenantId(req)}});if(!found){res.status(404).json({message:"Task not found"});return}res.json({data:await prisma.crmTask.update({where:{id:found.id},data:{completed:Boolean(req.body.completed)}})})}catch(e){next(e)}});
-workspaceRouter.put("/settings",async(req,res,next)=>{try{const tid=tenantId(req);for(const [key,value] of Object.entries(req.body??{})){await prisma.tenantSetting.upsert({where:{tenantId_key:{tenantId:tid,key}},update:{value:String(value)},create:{tenantId:tid,key,value:String(value)}})}res.json({data:req.body})}catch(e){next(e)}});
+workspaceRouter.patch("/tasks/:id",requirePermission("task.manage"),async(req,res,next)=>{try{const found=await prisma.crmTask.findFirst({where:{id:req.params.id,tenantId:tenantId(req)}});if(!found){res.status(404).json({message:"Task not found"});return}res.json({data:await prisma.crmTask.update({where:{id:found.id},data:{completed:Boolean(req.body.completed)}})})}catch(e){next(e)}});
+workspaceRouter.put("/settings",requirePermission("settings.manage"),async(req,res,next)=>{try{const tid=tenantId(req);for(const [key,value] of Object.entries(req.body??{})){await prisma.tenantSetting.upsert({where:{tenantId_key:{tenantId:tid,key}},update:{value:String(value)},create:{tenantId:tid,key,value:String(value)}})}res.json({data:req.body})}catch(e){next(e)}});

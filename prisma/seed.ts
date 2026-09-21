@@ -17,6 +17,11 @@ const permissions = [
   ["company.manage", "Manage companies"],
   ["opportunity.view", "View opportunities"],
   ["opportunity.manage", "Manage opportunities"],
+  ["task.view", "View CRM tasks"],
+  ["task.manage", "Create and update CRM tasks"],
+  ["sop.view", "View SOP processes"],
+  ["sop.manage", "Manage SOP processes"],
+  ["report.view", "View CRM reports"],
   ["team.view", "View workspace team"],
   ["team.manage", "Manage workspace team"],
   ["role.manage", "Manage roles and permissions"],
@@ -30,11 +35,11 @@ const rolePermissions: Record<string, string[]> = {
   SELLER: [
     "lead.view", "lead.create", "lead.update", "activity.view", "activity.create",
     "contact.view", "contact.manage", "company.view", "company.manage",
-    "opportunity.view", "opportunity.manage", "team.view",
+    "opportunity.view", "opportunity.manage", "task.view", "task.manage", "sop.view", "report.view", "team.view",
   ],
   CALLER: [
     "lead.view", "lead.update", "activity.view", "activity.create",
-    "contact.view", "company.view",
+    "contact.view", "task.view", "task.manage", "sop.view",
   ],
 };
 
