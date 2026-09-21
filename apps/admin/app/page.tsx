@@ -82,6 +82,8 @@ export default function AdminPage() {
     activeSubscriptions: 0,
     trials: 0,
   });
+  const [moduleData, setModuleData] = useState<any>(null);
+  const [moduleLoading, setModuleLoading] = useState(false);
   const [businessMenu, setBusinessMenu] = useState<string | null>(null);
   const [businessAction, setBusinessAction] = useState<{ tenant: Tenant; type: "edit" | "subscription" | "users" | "roles" | "settings" | "status" } | null>(null);
   const [apiState, setApiState] = useState<"loading" | "online" | "offline">(
@@ -127,6 +129,15 @@ export default function AdminPage() {
     setOverview(overviewResponse.data);
     setTenants(tenantResponse.data);
   }
+
+  useEffect(() => {
+    if (["subscriptions","users","permissions","audit","settings"].includes(section)) {
+      setModuleLoading(true); setModuleData(null);
+      fetch(`${apiUrl}/admin/${section}`, { credentials: "include" })
+        .then(async r => { if (!r.ok) throw new Error((await r.json()).message ?? "Could not load"); return r.json(); })
+        .then(body => setModuleData(body.data)).catch(error => setModuleData({ error: error.message })).finally(() => setModuleLoading(false));
+    }
+  }, [section]);
 
   const title = useMemo(
     () => nav.find(([key]) => key === section)?.[1] ?? "Overview",
@@ -191,21 +202,7 @@ export default function AdminPage() {
         ) : section === "businesses" ? (
           <BusinessesTable tenants={tenants} openMenu={businessMenu} setOpenMenu={setBusinessMenu} onAction={(tenant, type) => { setBusinessMenu(null); setBusinessAction({ tenant, type }); }} />
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>{title}</CardTitle>
-              <CardDescription>
-                This section is connected to admin navigation and ready for its
-                platform-management workflow.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p>
-                The backend foundation is running through the admin API. Add
-                module-specific actions here as the platform rules are defined.
-              </p>
-            </CardContent>
-          </Card>
+          <AdminModule section={section} data={moduleData} loading={moduleLoading} reload={() => setSection(section)} />
         )}
       </section>
       {businessAction ? <BusinessActionModal action={businessAction} onClose={() => setBusinessAction(null)} onSaved={refreshAdminData} /> : null}
@@ -295,6 +292,22 @@ function BusinessesTable({ tenants, openMenu, setOpenMenu, onAction }: { tenants
       </CardContent>
     </Card>
   );
+}
+
+function AdminModule({ section, data, loading, reload }: { section: Section; data: any; loading: boolean; reload: () => void }) {
+  if (loading) return <Card><CardContent><p>Loading {section}...</p></CardContent></Card>;
+  if (data?.error) return <Card><CardContent><p className="business-form-error">{data.error}</p></CardContent></Card>;
+  if (section === "subscriptions") return <Card><CardHeader><CardTitle>Subscriptions</CardTitle><CardDescription>Plans and seat allocation stored in PostgreSQL.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Business</TableHead><TableHead>Plan</TableHead><TableHead>Seats</TableHead><TableHead>Status</TableHead><TableHead>Started</TableHead></TableRow></TableHeader><TableBody>{(data??[]).map((s:any)=><TableRow key={s.id}><TableCell><strong>{s.tenant.name}</strong></TableCell><TableCell>{s.plan}</TableCell><TableCell>{s.seats}</TableCell><TableCell><Badge>{s.status}</Badge></TableCell><TableCell>{new Date(s.startsAt).toLocaleDateString()}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>;
+  if (section === "users") return <Card><CardHeader><CardTitle>Platform users</CardTitle><CardDescription>Users, businesses, roles and account access.</CardDescription></CardHeader><CardContent><div className="admin-user-list">{(data??[]).map((u:any)=><div key={u.id}><span><strong>{u.firstName} {u.lastName}</strong><small>{u.email} · {u.tenants.map((m:any)=>m.tenant.name+" / "+(m.role?.name??"No role")).join(", ")}</small></span><button type="button" onClick={async()=>{await fetch(`${apiUrl}/admin/users/${u.id}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({active:!u.active})});window.location.reload();}}>{u.active?"Disable":"Enable"}</button></div>)}</div></CardContent></Card>;
+  if (section === "permissions") return <Card><CardHeader><CardTitle>Permissions</CardTitle><CardDescription>Platform permission registry used by tenant roles.</CardDescription></CardHeader><CardContent><div className="permission-catalog">{(data??[]).map((p:any)=><div key={p.id}><code>{p.key}</code><span>{p.description??"No description"}</span></div>)}</div></CardContent></Card>;
+  if (section === "audit") return <Card><CardHeader><CardTitle>Audit log</CardTitle><CardDescription>Recent Super Admin changes recorded by the backend.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Action</TableHead><TableHead>Entity</TableHead><TableHead>Business</TableHead><TableHead>Time</TableHead></TableRow></TableHeader><TableBody>{(data??[]).map((l:any)=><TableRow key={l.id}><TableCell><strong>{l.action.replaceAll("_"," ")}</strong></TableCell><TableCell>{l.entity}</TableCell><TableCell>{l.tenant?.name??"Platform"}</TableCell><TableCell>{new Date(l.createdAt).toLocaleString()}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>;
+  if (section === "settings") return <PlatformSettings data={data} />;
+  return null;
+}
+function PlatformSettings({data}:{data:any}) {
+ const [saving,setSaving]=useState(false); const [message,setMessage]=useState("");
+ async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setSaving(true);setMessage("");const f=new FormData(e.currentTarget);const body={platformName:f.get("platformName"),supportEmail:f.get("supportEmail"),defaultPlan:f.get("defaultPlan"),defaultSeats:Number(f.get("defaultSeats")),allowTrials:f.get("allowTrials")==="on",trialDays:Number(f.get("trialDays"))};const r=await fetch(`${apiUrl}/admin/settings`,{method:"PUT",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});setMessage(r.ok?"Settings saved":"Could not save settings");setSaving(false);}
+ return <div className="platform-settings-layout"><Card><CardHeader><CardTitle>General</CardTitle><CardDescription>Defaults for the whole Hyaw CRM platform.</CardDescription></CardHeader><CardContent><form className="business-form" onSubmit={submit}><div className="form-grid"><label>Platform name<input name="platformName" defaultValue={data?.platformName??"Hyaw CRM"} required/></label><label>Support email<input name="supportEmail" type="email" defaultValue={data?.supportEmail??"support@hyaw.tech"} required/></label><label>Default plan<input name="defaultPlan" defaultValue={data?.defaultPlan??"Starter"} required/></label><label>Default seats<input name="defaultSeats" type="number" min="1" defaultValue={data?.defaultSeats??5} required/></label><label>Trial days<input name="trialDays" type="number" min="0" defaultValue={data?.trialDays??14} required/></label></div><label className="toggle-row"><span><strong>Allow trials</strong><small>Allow newly created businesses to start on a trial.</small></span><input name="allowTrials" type="checkbox" defaultChecked={data?.allowTrials??true}/></label>{message?<p className="settings-message">{message}</p>:null}<div className="business-form-actions"><Button disabled={saving} type="submit">{saving?"Saving...":"Save platform settings"}</Button></div></form></CardContent></Card></div>;
 }
 
 type BusinessAction = { tenant: Tenant; type: "edit" | "subscription" | "users" | "roles" | "settings" | "status" };
