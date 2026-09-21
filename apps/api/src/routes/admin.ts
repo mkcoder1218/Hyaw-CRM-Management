@@ -185,7 +185,7 @@ adminRouter.put("/settings", async (req, res, next) => {
 adminRouter.get("/audit", async (_req, res, next) => {
   try {
     const logs = await prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 100, include: { tenant: { select: { name: true } } } });
-    res.json({ data: logs });
+    res.json({ data: logs.map((log) => ({ ...log, action: log.action ?? "UNKNOWN_ACTION", entity: log.entity ?? "Unknown", actorId: log.actorId ?? "unknown" })) });
   } catch (error) { next(error); }
 });
 
