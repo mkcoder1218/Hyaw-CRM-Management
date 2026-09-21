@@ -32,6 +32,20 @@ const updateTenantSchema = z.object({
   slug: z.string().min(2).regex(/^[a-z0-9-]+$/).optional(),
   status: tenantStatusSchema.optional(),
 });
+const tenantSettingsSchema = z.object({
+  timezone: z.string().min(1),
+  currency: z.string().min(3).max(3),
+  locale: z.string().min(2),
+  leadAssignment: z.enum(["manual", "round_robin"]),
+  callerTracking: z.boolean(),
+});
+const membershipSchema = z.object({ roleId: z.string().min(1).nullable().optional(), active: z.boolean().optional() });
+const rolePermissionsSchema = z.object({ permissionIds: z.array(z.string()).default([]) });
+
+async function audit(actorId: string, action: string, entity: string, entityId?: string, tenantId?: string, metadata?: object) {
+  await prisma.auditLog.create({ data: { actorId, action, entity, entityId, tenantId, metadata } });
+}
+
 const updateSubscriptionSchema = z.object({
   plan: z.string().min(1),
   seats: z.number().int().positive(),
@@ -43,6 +57,7 @@ adminRouter.patch("/tenants/:id", async (req, res, next) => {
     const parsed = updateTenantSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ message: "Invalid business", issues: parsed.error.issues }); return; }
     const tenant = await prisma.tenant.update({ where: { id: req.params.id }, data: parsed.data });
+    await audit(req.auth!.userId, "TENANT_UPDATED", "Tenant", tenant.id, tenant.id, parsed.data);
     res.json({ data: tenant });
   } catch (error) { next(error); }
 });
@@ -56,7 +71,54 @@ adminRouter.patch("/tenants/:id/subscription", async (req, res, next) => {
       update: parsed.data,
       create: { tenantId: req.params.id, ...parsed.data },
     });
+    await audit(req.auth!.userId, "SUBSCRIPTION_UPDATED", "Subscription", subscription.id, req.params.id, parsed.data);
     res.json({ data: subscription });
+  } catch (error) { next(error); }
+});
+
+adminRouter.patch("/tenants/:tenantId/users/:membershipId", async (req, res, next) => {
+  try {
+    const parsed = membershipSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid membership", issues: parsed.error.issues }); return; }
+    const membership = await prisma.tenantUser.findFirst({ where: { id: req.params.membershipId, tenantId: req.params.tenantId }, include: { user: true } });
+    if (!membership) { res.status(404).json({ message: "Business user not found" }); return; }
+    if (parsed.data.roleId !== undefined) await prisma.tenantUser.update({ where: { id: membership.id }, data: { roleId: parsed.data.roleId } });
+    if (parsed.data.active !== undefined) await prisma.user.update({ where: { id: membership.userId }, data: { active: parsed.data.active } });
+    await audit(req.auth!.userId, "MEMBERSHIP_UPDATED", "TenantUser", membership.id, req.params.tenantId, parsed.data);
+    res.json({ data: { id: membership.id } });
+  } catch (error) { next(error); }
+});
+
+adminRouter.patch("/tenants/:tenantId/roles/:roleId/permissions", async (req, res, next) => {
+  try {
+    const parsed = rolePermissionsSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid permissions", issues: parsed.error.issues }); return; }
+    const role = await prisma.role.findFirst({ where: { id: req.params.roleId, tenantId: req.params.tenantId } });
+    if (!role) { res.status(404).json({ message: "Role not found" }); return; }
+    await prisma.$transaction([
+      prisma.rolePermission.deleteMany({ where: { roleId: role.id } }),
+      prisma.rolePermission.createMany({ data: parsed.data.permissionIds.map(permissionId => ({ roleId: role.id, permissionId })), skipDuplicates: true }),
+    ]);
+    await audit(req.auth!.userId, "ROLE_PERMISSIONS_UPDATED", "Role", role.id, req.params.tenantId, { permissionIds: parsed.data.permissionIds });
+    res.json({ data: { id: role.id } });
+  } catch (error) { next(error); }
+});
+
+adminRouter.get("/tenants/:id/settings", async (req, res, next) => {
+  try {
+    const rows = await prisma.tenantSetting.findMany({ where: { tenantId: req.params.id } });
+    const stored = Object.fromEntries(rows.map(row => [row.key, JSON.parse(row.value)]));
+    res.json({ data: { timezone: "Africa/Addis_Ababa", currency: "ETB", locale: "en", leadAssignment: "manual", callerTracking: true, ...stored } });
+  } catch (error) { next(error); }
+});
+
+adminRouter.put("/tenants/:id/settings", async (req, res, next) => {
+  try {
+    const parsed = tenantSettingsSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid settings", issues: parsed.error.issues }); return; }
+    await prisma.$transaction(Object.entries(parsed.data).map(([key, value]) => prisma.tenantSetting.upsert({ where: { tenantId_key: { tenantId: req.params.id, key } }, update: { value: JSON.stringify(value) }, create: { tenantId: req.params.id, key, value: JSON.stringify(value) } })));
+    await audit(req.auth!.userId, "TENANT_SETTINGS_UPDATED", "TenantSetting", undefined, req.params.id, parsed.data);
+    res.json({ data: parsed.data });
   } catch (error) { next(error); }
 });
 
@@ -78,7 +140,15 @@ adminRouter.get("/tenants/:id/roles", async (req, res, next) => {
       orderBy: { name: "asc" },
       include: { permissions: { include: { permission: true } }, _count: { select: { members: true } } },
     });
-    res.json({ data: roles });
+    const permissions = await prisma.permission.findMany({ orderBy: { key: "asc" } });
+    res.json({ data: { roles, permissions } });
+  } catch (error) { next(error); }
+});
+
+adminRouter.get("/audit", async (_req, res, next) => {
+  try {
+    const logs = await prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 100, include: { tenant: { select: { name: true } } } });
+    res.json({ data: logs });
   } catch (error) { next(error); }
 });
 

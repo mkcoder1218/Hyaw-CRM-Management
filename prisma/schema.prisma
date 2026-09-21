@@ -53,6 +53,8 @@ model Tenant {
   pipelines    Pipeline[]
   sops         Sop[]
   subscription Subscription?
+  settings     TenantSetting[]
+  auditLogs    AuditLog[]
 }
 
 model User {
@@ -247,4 +249,29 @@ model Subscription {
   startsAt DateTime @default(now())
   endsAt   DateTime?
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model TenantSetting {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  actorId   String
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
 }
