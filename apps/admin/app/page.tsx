@@ -14,6 +14,7 @@ import {
   Settings2,
   UserRoundCog,
   Ban,
+  LogOut,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import {
@@ -83,6 +84,8 @@ export default function AdminPage() {
     trials: 0,
   });
   const [moduleData, setModuleData] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<{ firstName?: string; lastName?: string; email?: string; role?: string } | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [moduleLoading, setModuleLoading] = useState(false);
   const [businessMenu, setBusinessMenu] = useState<string | null>(null);
   const [businessAction, setBusinessAction] = useState<{ tenant: Tenant; type: "edit" | "subscription" | "users" | "roles" | "settings" | "status" } | null>(null);
@@ -92,6 +95,11 @@ export default function AdminPage() {
 
   useEffect(() => {
     Promise.all([
+      fetch(`${apiUrl}/auth/me`, { credentials: "include" }).then((response) => {
+        if (response.status === 401 || response.status === 403) throw new Error("ADMIN_AUTH");
+        if (!response.ok) throw new Error("ADMIN_AUTH");
+        return response.json();
+      }),
       fetch(`${apiUrl}/health`, { credentials: "include" }).then((response) => {
         if (!response.ok) throw new Error("API unavailable");
         return response.json();
@@ -107,7 +115,8 @@ export default function AdminPage() {
         return response.json();
       }),
     ])
-      .then(([, overviewResponse, tenantResponse]) => {
+      .then(([meResponse, , overviewResponse, tenantResponse]) => {
+        setCurrentUser(meResponse.data);
         setOverview(overviewResponse.data);
         setTenants(tenantResponse.data);
         setApiState("online");
@@ -120,6 +129,16 @@ export default function AdminPage() {
         setApiState("offline");
       });
   }, []);
+
+  async function logout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await fetch(`${apiUrl}/auth/logout`, { method: "POST", credentials: "include" });
+    } finally {
+      window.location.replace("/login");
+    }
+  }
 
   async function refreshAdminData() {
     const [overviewResponse, tenantResponse] = await Promise.all([
@@ -175,6 +194,15 @@ export default function AdminPage() {
             </Button>
           ))}
         </nav>
+        <div className="admin-sidebar-account">
+          <div className="admin-sidebar-user">
+            <div className="admin-sidebar-avatar">{currentUser?.firstName?.[0] ?? currentUser?.email?.[0]?.toUpperCase() ?? "A"}</div>
+            <div><strong>{[currentUser?.firstName,currentUser?.lastName].filter(Boolean).join(" ") || "Super Admin"}</strong><small>{currentUser?.email ?? "Signed in"}</small></div>
+          </div>
+          <Button type="button" variant="outline" onClick={logout} disabled={loggingOut}>
+            <LogOut size={15}/>{loggingOut ? "Signing out..." : "Log out"}
+          </Button>
+        </div>
       </aside>
 
       <section className="content">
