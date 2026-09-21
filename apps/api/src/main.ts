@@ -32,6 +32,12 @@ app.use((req, res) =>
   res.status(404).json({ message: "Route not found", path: req.path }),
 );
 
+app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("API request failed", req.method, req.path, error);
+  if (res.headersSent) return;
+  res.status(500).json({ message: "Internal server error" });
+});
+
 app.listen(port, "0.0.0.0", () => {
   console.log(`Hyaw CRM API listening on http://localhost:${port}`);
 });

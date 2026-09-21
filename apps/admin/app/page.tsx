@@ -134,8 +134,20 @@ export default function AdminPage() {
     if (["subscriptions","users","permissions","audit","settings"].includes(section)) {
       setModuleLoading(true); setModuleData(null);
       fetch(`${apiUrl}/admin/${section}`, { credentials: "include" })
-        .then(async r => { if (!r.ok) throw new Error((await r.json()).message ?? "Could not load"); return r.json(); })
-        .then(body => setModuleData(body.data)).catch(error => setModuleData({ error: error.message })).finally(() => setModuleLoading(false));
+        .then(async r => {
+          const contentType = r.headers.get("content-type") ?? "";
+          const body = contentType.includes("application/json") ? await r.json() : null;
+          if (r.status === 401 || r.status === 403) throw new Error("ADMIN_AUTH");
+          if (!r.ok) throw new Error(body?.message ?? `Could not load ${section} (HTTP ${r.status})`);
+          if (!body) throw new Error(`Invalid API response for ${section}`);
+          return body;
+        })
+        .then(body => setModuleData(body.data))
+        .catch(error => {
+          if (error instanceof Error && error.message === "ADMIN_AUTH") { window.location.assign("/login"); return; }
+          setModuleData({ error: error instanceof Error ? error.message : "Could not load module" });
+        })
+        .finally(() => setModuleLoading(false));
     }
   }, [section]);
 
