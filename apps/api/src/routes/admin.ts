@@ -14,15 +14,72 @@ adminRouter.use((req, res, next) => {
   next();
 });
 
+const tenantStatusSchema = z.enum(["TRIAL", "ACTIVE", "SUSPENDED", "CANCELLED"]);
 const createTenantSchema = z.object({
   name: z.string().min(2),
   slug: z
     .string()
     .min(2)
     .regex(/^[a-z0-9-]+$/),
-  status: z.enum(["TRIAL", "ACTIVE", "SUSPENDED", "CANCELLED"]).default("TRIAL"),
+  status: tenantStatusSchema.default("TRIAL"),
   plan: z.string().min(1).default("Starter"),
   seats: z.number().int().positive().default(1),
+});
+
+
+const updateTenantSchema = z.object({
+  name: z.string().min(2).optional(),
+  slug: z.string().min(2).regex(/^[a-z0-9-]+$/).optional(),
+  status: tenantStatusSchema.optional(),
+});
+const updateSubscriptionSchema = z.object({
+  plan: z.string().min(1),
+  seats: z.number().int().positive(),
+  status: z.enum(["ACTIVE", "TRIAL", "PAST_DUE", "CANCELLED"]),
+});
+
+adminRouter.patch("/tenants/:id", async (req, res, next) => {
+  try {
+    const parsed = updateTenantSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid business", issues: parsed.error.issues }); return; }
+    const tenant = await prisma.tenant.update({ where: { id: req.params.id }, data: parsed.data });
+    res.json({ data: tenant });
+  } catch (error) { next(error); }
+});
+
+adminRouter.patch("/tenants/:id/subscription", async (req, res, next) => {
+  try {
+    const parsed = updateSubscriptionSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid subscription", issues: parsed.error.issues }); return; }
+    const subscription = await prisma.subscription.upsert({
+      where: { tenantId: req.params.id },
+      update: parsed.data,
+      create: { tenantId: req.params.id, ...parsed.data },
+    });
+    res.json({ data: subscription });
+  } catch (error) { next(error); }
+});
+
+adminRouter.get("/tenants/:id/users", async (req, res, next) => {
+  try {
+    const members = await prisma.tenantUser.findMany({
+      where: { tenantId: req.params.id },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, user: { select: { id: true, firstName: true, lastName: true, email: true, active: true } }, role: { select: { id: true, name: true } } },
+    });
+    res.json({ data: members });
+  } catch (error) { next(error); }
+});
+
+adminRouter.get("/tenants/:id/roles", async (req, res, next) => {
+  try {
+    const roles = await prisma.role.findMany({
+      where: { tenantId: req.params.id },
+      orderBy: { name: "asc" },
+      include: { permissions: { include: { permission: true } }, _count: { select: { members: true } } },
+    });
+    res.json({ data: roles });
+  } catch (error) { next(error); }
 });
 
 adminRouter.get("/overview", async (_req, res, next) => {
