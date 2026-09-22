@@ -98,7 +98,13 @@ jobs:
             EOF
             chmod 600 .env.production
 
-            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans || {
+              echo "Deployment failed. CRM container status:"
+              docker compose --env-file .env.production -f docker-compose.prod.yml ps -a || true
+              echo "CRM API logs:"
+              docker compose --env-file .env.production -f docker-compose.prod.yml logs --no-color --tail=200 crm-api || true
+              exit 1
+            }
             docker image prune -f
 
             curl --fail --retry 12 --retry-delay 5 http://127.0.0.1:8002/api/health
