@@ -32,23 +32,58 @@ jobs:
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SEED_SUPER_ADMIN_PASSWORD: ${{ secrets.SEED_SUPER_ADMIN_PASSWORD }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          SEED_SELLER_PASSWORD: ${{ secrets.SEED_SELLER_PASSWORD }}
+          SEED_CALLER_PASSWORD: ${{ secrets.SEED_CALLER_PASSWORD }}
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
           script_stop: true
+          envs: DATABASE_URL,JWT_SECRET,SEED_SUPER_ADMIN_PASSWORD,SEED_ADMIN_PASSWORD,SEED_SELLER_PASSWORD,SEED_CALLER_PASSWORD,NEXT_PUBLIC_API_URL
           script: |
             set -e
             APP_DIR="${{ secrets.VPS_APP_DIR }}"
             if [ -z "$APP_DIR" ]; then APP_DIR="/opt/hyaw-crm"; fi
             cd "$APP_DIR"
+
             git fetch origin main
             git checkout main
             git reset --hard origin/main
-            test -f .env.production
-            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+
+            : "${DATABASE_URL:?DATABASE_URL GitHub secret is required}"
+            : "${JWT_SECRET:?JWT_SECRET GitHub secret is required}"
+            : "${SEED_SUPER_ADMIN_PASSWORD:?SEED_SUPER_ADMIN_PASSWORD GitHub secret is required}"
+            : "${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD GitHub secret is required}"
+            : "${SEED_SELLER_PASSWORD:?SEED_SELLER_PASSWORD GitHub secret is required}"
+            : "${SEED_CALLER_PASSWORD:?SEED_CALLER_PASSWORD GitHub secret is required}"
+
+            if [ -z "$NEXT_PUBLIC_API_URL" ]; then
+              NEXT_PUBLIC_API_URL="https://apiCRMhyaw.tech/api"
+            fi
+
+            umask 077
+            cat > .env.production <<EOF
+            DATABASE_URL=$DATABASE_URL
+            API_PORT=8002
+            NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+            JWT_SECRET=$JWT_SECRET
+            SEED_SUPER_ADMIN_PASSWORD=$SEED_SUPER_ADMIN_PASSWORD
+            SEED_ADMIN_PASSWORD=$SEED_ADMIN_PASSWORD
+            SEED_SELLER_PASSWORD=$SEED_SELLER_PASSWORD
+            SEED_CALLER_PASSWORD=$SEED_CALLER_PASSWORD
+            EOF
+            chmod 600 .env.production
+
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
             docker image prune -f
+
             curl --fail --retry 12 --retry-delay 5 http://127.0.0.1:8002/api/health
             curl --fail --retry 12 --retry-delay 5 http://127.0.0.1:8000/
             curl --fail --retry 12 --retry-delay 5 http://127.0.0.1:8001/
