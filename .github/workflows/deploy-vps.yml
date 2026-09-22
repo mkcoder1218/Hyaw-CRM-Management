@@ -54,7 +54,6 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
-          script_stop: true
           envs: DATABASE_URL,JWT_SECRET,SEED_SUPER_ADMIN_PASSWORD,SEED_ADMIN_PASSWORD,SEED_SELLER_PASSWORD,SEED_CALLER_PASSWORD,NEXT_PUBLIC_API_URL
           script: |
             set -e
@@ -62,6 +61,11 @@ jobs:
             APP_DIR="${{ secrets.VPS_APP_DIR }}"
             if [ -z "$APP_DIR" ]; then
               APP_DIR="/opt/hyaw-crm"
+            fi
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              mkdir -p "$(dirname "$APP_DIR")"
+              git clone https://github.com/mkcoder1218/Hyaw-CRM-Management.git "$APP_DIR"
             fi
 
             cd "$APP_DIR"
