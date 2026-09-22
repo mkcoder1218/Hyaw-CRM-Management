@@ -5,7 +5,7 @@ import { requireAuth, requireAnyPermission, requirePermission } from "../auth";
 
 export const workspaceRouter = Router();
 workspaceRouter.use(requireAuth);
-const tenantId = (req: any) => req.auth!.tenantId;
+const tenantId = (req: any): string => String(req.auth!.tenantId);
 const leadStage = z.enum(["NEW","CONTACTED","QUALIFIED","PROPOSAL","WON","LOST"]);
 const schemas: Record<string, z.ZodTypeAny> = {
   leads: z.object({firstName:z.string().min(1),lastName:z.string().min(1),email:z.string().optional(),phone:z.string().optional(),company:z.string().optional(),title:z.string().optional(),source:z.string().optional(),status:leadStage.default("NEW"),score:z.coerce.number().int().min(0).max(100).default(0),estimatedValue:z.coerce.number().nonnegative().default(0),nextFollowUpAt:z.string().optional(),ownerId:z.string().optional()}),
