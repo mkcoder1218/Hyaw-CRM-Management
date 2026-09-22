@@ -33,7 +33,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["node","dist/apps/api/main.js"]
+    command: ["pnpm","exec","tsx","apps/api/src/main.ts"]
     restart: unless-stopped
     env_file: .env.production
     environment:
