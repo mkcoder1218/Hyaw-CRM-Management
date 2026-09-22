@@ -1,0 +1,48 @@
+services:
+  crm-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://apiCRMhyaw.tech/api}
+    command: ["pnpm","exec","next","start","apps/web","-H","0.0.0.0","-p","8000"]
+    restart: unless-stopped
+    env_file: .env.production
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      crm-api:
+        condition: service_healthy
+
+  crm-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://apiCRMhyaw.tech/api}
+    command: ["pnpm","exec","next","start","apps/admin","-H","0.0.0.0","-p","8001"]
+    restart: unless-stopped
+    env_file: .env.production
+    ports:
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      crm-api:
+        condition: service_healthy
+
+  crm-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node","dist/apps/api/main.js"]
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      API_PORT: "8002"
+    ports:
+      - "127.0.0.1:8002:8002"
+    healthcheck:
+      test: ["CMD-SHELL","wget -qO- http://127.0.0.1:8002/api/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
