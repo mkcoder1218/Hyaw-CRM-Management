@@ -107,6 +107,29 @@ jobs:
             }
             docker image prune -f
 
-            curl --fail --retry 12 --retry-delay 5 http://127.0.0.1:8002/api/health
-            curl --fail --retry 12 --retry-delay 5 http://127.0.0.1:8000/
-            curl --fail --retry 12 --retry-delay 5 http://127.0.0.1:8001/
+            check_url() {
+              name="$1"
+              url="$2"
+              attempts=18
+              delay=5
+
+              i=1
+              while [ "$i" -le "$attempts" ]; do
+                if curl --silent --show-error --fail --max-time 10 "$url" >/dev/null; then
+                  echo "$name is ready: $url"
+                  return 0
+                fi
+                echo "$name not ready yet ($i/$attempts); retrying in 5s..."
+                sleep "$delay"
+                i=$((i + 1))
+              done
+
+              echo "$name failed readiness check: $url"
+              docker compose --env-file .env.production -f docker-compose.prod.yml ps -a || true
+              docker compose --env-file .env.production -f docker-compose.prod.yml logs --no-color --tail=200 || true
+              return 1
+            }
+
+            check_url "CRM API" "http://127.0.0.1:8002/api/health"
+            check_url "CRM Web" "http://127.0.0.1:8000/"
+            check_url "CRM Admin" "http://127.0.0.1:8001/"
