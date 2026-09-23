@@ -1,0 +1,10 @@
+"use client";
+import {useEffect,useState} from "react";
+import {Badge} from "../../components/ui/badge";
+const api=process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/,"")??"http://localhost:4000/api";
+const statuses=["NEW","REVIEWING","NEEDS_CLARIFICATION","APPROVED","PROPOSAL","IN_DEVELOPMENT","DELIVERED","CLOSED"];
+export default function Page(){const[data,setData]=useState<any[]>([]),[error,setError]=useState("");
+ async function load(){const r=await fetch(api+"/workspace/requests",{credentials:"include"});const b=await r.json();if(!r.ok){setError(b.message||"Could not load requests");return}setData(b.data||[])}
+ useEffect(()=>{void load()},[]);
+ async function update(id:string,status:string){const r=await fetch(api+"/workspace/requests/"+id,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});if(!r.ok){setError("Could not update request");return}await load()}
+ return <div className="placeholderPage"><header><div><p className="eyebrow">Customer discovery</p><h1>New Requests</h1><p>Problems discovered by sellers after the Hyaw Workforce conversation did not fit the customer's main need.</p></div></header>{error?<p className="dataError">{error}</p>:null}<div className="ui-card"><div className="ui-card-content" style={{overflowX:"auto"}}><table className="ui-table"><thead><tr><th>Company</th><th>Problem</th><th>Current process</th><th>What they need</th><th>Seller message</th><th>Submitted by</th><th>Status</th></tr></thead><tbody>{data.map(r=><tr key={r.id}><td><strong>{r.lead.company||[r.lead.firstName,r.lead.lastName].join(" ")}</strong><br/><small>{r.lead.phone||r.lead.email||"No contact"}</small></td><td>{r.problem}</td><td>{r.currentProcess||"—"}</td><td>{r.requestedSolution||"—"}</td><td>{r.message}</td><td>{r.submittedBy.firstName} {r.submittedBy.lastName}</td><td><Badge>{r.status}</Badge><br/><select value={r.status} onChange={e=>void update(r.id,e.target.value)}>{statuses.map(s=><option key={s}>{s}</option>)}</select></td></tr>)}</tbody></table>{!data.length?<p>No customer requests yet.</p>:null}</div></div></div>}
