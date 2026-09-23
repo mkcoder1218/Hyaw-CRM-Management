@@ -9,6 +9,8 @@ import { sopsRouter } from "./routes/sops";
 import { adminRouter } from "./routes/admin";
 import { authRouter } from "./routes/auth";
 import { workspaceRouter } from "./routes/workspace";
+import { aiLeadsRouter } from "./routes/ai-leads";
+import { startLeadFetcherWorker } from "./workers/lead-fetcher";
 
 const app = express();
 const port = Number(process.env.API_PORT ?? 4000);
@@ -29,6 +31,7 @@ app.use("/api/sops", sopsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/workspace", workspaceRouter);
+app.use("/api/ai-leads", aiLeadsRouter);
 
 app.use((req, res) =>
   res.status(404).json({ message: "Route not found", path: req.path }),
@@ -42,4 +45,5 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`Hyaw CRM API listening on http://localhost:${port}`);
+  startLeadFetcherWorker();
 });

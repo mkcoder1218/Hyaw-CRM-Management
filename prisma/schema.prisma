@@ -59,6 +59,8 @@ model Tenant {
   contacts     Contact[]
   opportunities Opportunity[]
   crmTasks     CrmTask[]
+  leadCampaigns LeadCampaign[]
+  discoveredLeads DiscoveredLead[]
 }
 
 model User {
@@ -347,4 +349,63 @@ model CrmTask {
   updatedAt DateTime @updatedAt
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   @@index([tenantId, completed])
+}
+
+
+enum DiscoveryLeadStatus {
+  NEW
+  REVIEWED
+  CONVERTED
+  REJECTED
+}
+
+model LeadCampaign {
+  id String @id @default(cuid())
+  tenantId String
+  name String
+  product String
+  query String
+  location String?
+  industry String?
+  targetNotes String?
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads DiscoveredLead[]
+  @@index([tenantId, active])
+}
+
+model DiscoveredLead {
+  id String @id @default(cuid())
+  tenantId String
+  campaignId String
+  name String
+  company String
+  website String?
+  email String?
+  phone String?
+  location String?
+  industry String?
+  sourceUrl String
+  sourceName String?
+  description String?
+  fitScore Int @default(0)
+  priority String @default("MEDIUM")
+  likelyProblems Json?
+  strategy String?
+  openingLine String?
+  firstCallGoal String?
+  objections Json?
+  nextAction String?
+  rawData Json?
+  status DiscoveryLeadStatus @default(NEW)
+  convertedLeadId String?
+  discoveredAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign LeadCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, sourceUrl])
+  @@index([tenantId, status, fitScore])
+  @@index([campaignId])
 }
