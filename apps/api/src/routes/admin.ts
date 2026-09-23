@@ -50,7 +50,10 @@ const platformSettingsSchema = z.object({
   defaultSeats: z.number().int().positive(),
   allowTrials: z.boolean(),
   trialDays: z.number().int().min(0).max(365),
-  groqModel: z.string().min(1).default("llama-3.3-70b-versatile"),
+  aiProvider: z.enum(["GROQ","OPENAI","GEMINI","ANTHROPIC"]).default("GROQ"),
+  aiModel: z.string().min(1).default("openai/gpt-oss-120b"),
+  aiApiKey: z.string().optional(),
+  groqModel: z.string().optional(),
   groqApiKey: z.string().optional(),
   leadSearchProvider: z.enum(["SERPER","BRAVE","TAVILY","EXA"]).default("SERPER"),
   leadSearchApiKey: z.string().optional(),
@@ -176,8 +179,8 @@ adminRouter.get("/settings", async (_req, res, next) => {
       try { return [row.key, JSON.parse(row.value)]; }
       catch { return [row.key, row.value]; }
     }));
-    const groqKey = await getPlatformValue("groqApiKey"); const searchKey = await getPlatformValue("leadSearchApiKey");
-    res.json({ data: { platformName: "Hyaw CRM", supportEmail: "support@hyaw.tech", defaultPlan: "Starter", defaultSeats: 5, allowTrials: true, trialDays: 14, groqModel: "llama-3.3-70b-versatile", leadSearchProvider: "SERPER", ...stored, groqApiKey: "", groqApiKeyMasked: maskSecret(groqKey), leadSearchApiKey: "", leadSearchApiKeyMasked: maskSecret(searchKey) } });
+    const aiKey = (await getPlatformValue("aiApiKey")) || (await getPlatformValue("groqApiKey")); const searchKey = await getPlatformValue("leadSearchApiKey");
+    res.json({ data: { platformName: "Hyaw CRM", supportEmail: "support@hyaw.tech", defaultPlan: "Starter", defaultSeats: 5, allowTrials: true, trialDays: 14, aiProvider: "GROQ", aiModel: "openai/gpt-oss-120b", leadSearchProvider: "SERPER", ...stored, aiApiKey: "", aiApiKeyMasked: maskSecret(aiKey), groqApiKey: "", leadSearchApiKey: "", leadSearchApiKeyMasked: maskSecret(searchKey) } });
   } catch (error) { next(error); }
 });
 
@@ -185,11 +188,12 @@ adminRouter.put("/settings", async (req, res, next) => {
   try {
     const parsed = platformSettingsSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ message: "Invalid platform settings", issues: parsed.error.issues }); return; }
-    const { groqApiKey, leadSearchApiKey, ...plain } = parsed.data;
+    const { aiApiKey, groqApiKey, leadSearchApiKey, ...plain } = parsed.data;
     await prisma.$transaction(Object.entries(plain).map(([key, value]) => prisma.platformSetting.upsert({ where: { key }, update: { value: JSON.stringify(value) }, create: { key, value: JSON.stringify(value) } })));
-    if (groqApiKey?.trim()) await setPlatformValue("groqApiKey", groqApiKey.trim());
+    if (aiApiKey?.trim()) await setPlatformValue("aiApiKey", aiApiKey.trim());
+    else if (groqApiKey?.trim()) await setPlatformValue("aiApiKey", groqApiKey.trim());
     if (leadSearchApiKey?.trim()) await setPlatformValue("leadSearchApiKey", leadSearchApiKey.trim());
-    await audit(req.auth!.userId, "PLATFORM_SETTINGS_UPDATED", "PlatformSetting", undefined, undefined, parsed.data);
+    await audit(req.auth!.userId, "PLATFORM_SETTINGS_UPDATED", "PlatformSetting", undefined, undefined, { ...plain, aiApiKeyUpdated: Boolean(aiApiKey?.trim() || groqApiKey?.trim()), leadSearchApiKeyUpdated: Boolean(leadSearchApiKey?.trim()) });
     res.json({ data: parsed.data });
   } catch (error) { next(error); }
 });
