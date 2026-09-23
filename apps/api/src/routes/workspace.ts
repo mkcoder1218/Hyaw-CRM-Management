@@ -33,7 +33,17 @@ workspaceRouter.get("/dashboard",requireAnyPermission("lead.view","activity.view
  res.json({data:{stats:{openLeads:open.length,pipelineValue,wonValue,conversion:leads.length?Math.round(leads.filter(x=>x.status==="WON").length/leads.length*1000)/10:0},stages,tasks,priorityLeads:leads.slice(0,6)}});
 }catch(e){next(e)}});
 
-workspaceRouter.get("/leads",requirePermission("lead.view"),async(req,res,next)=>{try{res.json({data:await prisma.lead.findMany({where:{tenantId:tenantId(req)},include:{owner:{select:{firstName:true,lastName:true}}},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
+workspaceRouter.get("/leads",requirePermission("lead.view"),async(req,res,next)=>{try{
+ const tid=tenantId(req),page=Math.max(1,Number(req.query.page)||1),pageSize=Math.min(100,Math.max(1,Number(req.query.pageSize)||25));
+ const search=String(req.query.search||"").trim(),status=String(req.query.status||""),hr=String(req.query.hrOutcome||""),ownerId=String(req.query.ownerId||""),source=String(req.query.source||"").trim();
+ const minScore=Number(req.query.minScore),maxScore=Number(req.query.maxScore);
+ const where:any={tenantId:tid};
+ if(search)where.OR=[{firstName:{contains:search,mode:"insensitive"}},{lastName:{contains:search,mode:"insensitive"}},{company:{contains:search,mode:"insensitive"}},{email:{contains:search,mode:"insensitive"}},{phone:{contains:search,mode:"insensitive"}},{source:{contains:search,mode:"insensitive"}}];
+ if(status&&status!=="ALL")where.status=status;if(hr&&hr!=="ALL")where.hrCallOutcome=hr;if(ownerId&&ownerId!=="ALL")where.ownerId=ownerId;if(source)where.source={contains:source,mode:"insensitive"};
+ if(Number.isFinite(minScore)||Number.isFinite(maxScore))where.score={...(Number.isFinite(minScore)?{gte:minScore}:{}),...(Number.isFinite(maxScore)?{lte:maxScore}:{})};
+ const [data,total]=await Promise.all([prisma.lead.findMany({where,include:{owner:{select:{firstName:true,lastName:true}}},orderBy:{createdAt:"desc"},skip:(page-1)*pageSize,take:pageSize}),prisma.lead.count({where})]);
+ res.json({data,pagination:{page,pageSize,total,totalPages:Math.max(1,Math.ceil(total/pageSize))}});
+}catch(e){next(e)}});
 workspaceRouter.get("/requests",requirePermission("settings.manage"),async(req,res,next)=>{try{res.json({data:await prisma.clientRequest.findMany({where:{tenantId:tenantId(req)},include:{lead:{select:{id:true,firstName:true,lastName:true,company:true,phone:true,email:true,hrCallOutcome:true}},submittedBy:{select:{firstName:true,lastName:true}}},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
 workspaceRouter.get("/contacts",requirePermission("contact.view"),async(req,res,next)=>{try{res.json({data:await prisma.contact.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
 workspaceRouter.get("/companies",requirePermission("company.view"),async(req,res,next)=>{try{res.json({data:await prisma.company.findMany({where:{tenantId:tenantId(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
