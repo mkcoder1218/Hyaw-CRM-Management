@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { requireAuth } from "../auth";
+import { getPlatformValue, maskSecret, setPlatformValue } from "../services/platform-ai-settings";
 
 export const adminRouter = Router();
 
@@ -49,6 +50,10 @@ const platformSettingsSchema = z.object({
   defaultSeats: z.number().int().positive(),
   allowTrials: z.boolean(),
   trialDays: z.number().int().min(0).max(365),
+  groqModel: z.string().min(1).default("llama-3.3-70b-versatile"),
+  groqApiKey: z.string().optional(),
+  leadSearchProvider: z.enum(["SERPER"]).default("SERPER"),
+  leadSearchApiKey: z.string().optional(),
 });
 
 async function audit(actorId: string, action: string, entity: string, entityId?: string, tenantId?: string, metadata?: object) {
@@ -171,7 +176,8 @@ adminRouter.get("/settings", async (_req, res, next) => {
       try { return [row.key, JSON.parse(row.value)]; }
       catch { return [row.key, row.value]; }
     }));
-    res.json({ data: { platformName: "Hyaw CRM", supportEmail: "support@hyaw.tech", defaultPlan: "Starter", defaultSeats: 5, allowTrials: true, trialDays: 14, ...stored } });
+    const groqKey = await getPlatformValue("groqApiKey"); const searchKey = await getPlatformValue("leadSearchApiKey");
+    res.json({ data: { platformName: "Hyaw CRM", supportEmail: "support@hyaw.tech", defaultPlan: "Starter", defaultSeats: 5, allowTrials: true, trialDays: 14, groqModel: "llama-3.3-70b-versatile", leadSearchProvider: "SERPER", ...stored, groqApiKey: "", groqApiKeyMasked: maskSecret(groqKey), leadSearchApiKey: "", leadSearchApiKeyMasked: maskSecret(searchKey) } });
   } catch (error) { next(error); }
 });
 
@@ -179,7 +185,10 @@ adminRouter.put("/settings", async (req, res, next) => {
   try {
     const parsed = platformSettingsSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ message: "Invalid platform settings", issues: parsed.error.issues }); return; }
-    await prisma.$transaction(Object.entries(parsed.data).map(([key, value]) => prisma.platformSetting.upsert({ where: { key }, update: { value: JSON.stringify(value) }, create: { key, value: JSON.stringify(value) } })));
+    const { groqApiKey, leadSearchApiKey, ...plain } = parsed.data;
+    await prisma.$transaction(Object.entries(plain).map(([key, value]) => prisma.platformSetting.upsert({ where: { key }, update: { value: JSON.stringify(value) }, create: { key, value: JSON.stringify(value) } })));
+    if (groqApiKey?.trim()) await setPlatformValue("groqApiKey", groqApiKey.trim());
+    if (leadSearchApiKey?.trim()) await setPlatformValue("leadSearchApiKey", leadSearchApiKey.trim());
     await audit(req.auth!.userId, "PLATFORM_SETTINGS_UPDATED", "PlatformSetting", undefined, undefined, parsed.data);
     res.json({ data: parsed.data });
   } catch (error) { next(error); }
