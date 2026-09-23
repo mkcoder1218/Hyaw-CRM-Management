@@ -16,7 +16,7 @@ export async function runLeadDiscovery(campaignId?:string){
  try{
   const campaigns=await prisma.leadCampaign.findMany({where:{active:true,...(campaignId?{id:campaignId}:{})}});
   for(const campaign of campaigns){
-   const q=[campaign.query,campaign.industry,campaign.location,'-"HR software" -"payroll software" -"attendance software" -"HR outsourcing"'].filter(Boolean).join(" ");
+   const q=[campaign.query,campaign.industry,campaign.location].filter(Boolean).join(" ");
    const candidates=dedupeFormattedLeads((await searchPublicLeads(q)).map(x=>formatSearchCandidate(x,campaign)).filter((x):x is NonNullable<typeof x>=>Boolean(x)));
    for(const lead of candidates){
     if(await prisma.discoveredLead.findUnique({where:{tenantId_sourceUrl:{tenantId:campaign.tenantId,sourceUrl:lead.sourceUrl}}})){duplicates++;continue}
