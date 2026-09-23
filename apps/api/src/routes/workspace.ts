@@ -40,7 +40,7 @@ workspaceRouter.get("/leads",requirePermission("lead.view"),async(req,res,next)=
  const where:any={tenantId:tid};
  if(search)where.OR=[{firstName:{contains:search,mode:"insensitive"}},{lastName:{contains:search,mode:"insensitive"}},{company:{contains:search,mode:"insensitive"}},{email:{contains:search,mode:"insensitive"}},{phone:{contains:search,mode:"insensitive"}},{source:{contains:search,mode:"insensitive"}}];
  if(status&&status!=="ALL")where.status=status;if(hr&&hr!=="ALL")where.hrCallOutcome=hr;if(ownerId&&ownerId!=="ALL")where.ownerId=ownerId;if(source)where.source={contains:source,mode:"insensitive"};
- if(Number.isFinite(minScore)||Number.isFinite(maxScore))where.score={...(Number.isFinite(minScore)?{gte:minScore}:{}),...(Number.isFinite(maxScore)?{lte:maxScore}:{})};
+ if(minScore!==undefined||maxScore!==undefined)where.score={...(minScore!==undefined&&Number.isFinite(minScore)?{gte:minScore}:{}),...(maxScore!==undefined&&Number.isFinite(maxScore)?{lte:maxScore}:{})};
  const [data,total]=await Promise.all([prisma.lead.findMany({where,include:{owner:{select:{firstName:true,lastName:true}}},orderBy:{createdAt:"desc"},skip:(page-1)*pageSize,take:pageSize}),prisma.lead.count({where})]);
  res.json({data,pagination:{page,pageSize,total,totalPages:Math.max(1,Math.ceil(total/pageSize))}});
 }catch(e){next(e)}});
