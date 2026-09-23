@@ -52,7 +52,7 @@ const platformSettingsSchema = z.object({
   trialDays: z.number().int().min(0).max(365),
   groqModel: z.string().min(1).default("llama-3.3-70b-versatile"),
   groqApiKey: z.string().optional(),
-  leadSearchProvider: z.enum(["SERPER"]).default("SERPER"),
+  leadSearchProvider: z.enum(["SERPER","BRAVE","TAVILY","EXA"]).default("SERPER"),
   leadSearchApiKey: z.string().optional(),
 });
 
