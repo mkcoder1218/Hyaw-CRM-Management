@@ -18,7 +18,8 @@
     "db:push": "prisma db push",
     "format": "prettier --write .",
     "db:seed": "tsx prisma/seed.ts",
-    "db:setup": "pnpm db:generate && pnpm db:push && pnpm db:seed"
+    "db:setup": "pnpm db:generate && pnpm db:push && pnpm db:seed",
+    "db:clear-discovered-leads": "tsx prisma/clear-discovered-leads.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
