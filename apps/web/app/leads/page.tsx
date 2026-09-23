@@ -21,7 +21,7 @@ export default function Page(){
 
  async function load(reset=true){
   try{
-   const requestedPage=reset?page:1,size=view==="kanban"?50:pageSize;
+   const requestedPage=reset?page:1,size=pageSize;
    const[r,t]=await Promise.all([fetch(apiUrl+"/workspace/leads?"+query(requestedPage,size),{credentials:"include"}),fetch(apiUrl+"/workspace/team",{credentials:"include"})]);
    const b=await r.json();if(!r.ok)throw new Error(b.message||"Could not load leads");
    setData(Array.isArray(b.data)?b.data:[]);if(b.pagination)setPagination(b.pagination);
@@ -31,7 +31,7 @@ export default function Page(){
  async function loadMore(){
   if(view!=="kanban"||loadingMore||pagination.page>=pagination.totalPages)return;
   setLoadingMore(true);
-  try{const next=pagination.page+1,r=await fetch(apiUrl+"/workspace/leads?"+query(next,50),{credentials:"include"}),b=await r.json();if(!r.ok)throw new Error(b.message||"Could not load more leads");setData(old=>[...old,...(b.data||[])]);setPagination(b.pagination)}
+  try{const next=pagination.page+1,r=await fetch(apiUrl+"/workspace/leads?"+query(next,pageSize),{credentials:"include"}),b=await r.json();if(!r.ok)throw new Error(b.message||"Could not load more leads");setData(old=>[...old,...(b.data||[])]);setPagination(b.pagination)}
   catch(e){setError(e instanceof Error?e.message:"Could not load more leads")}finally{setLoadingMore(false)}
  }
  useEffect(()=>{setPage(1);const timer=setTimeout(()=>void load(),search?250:0);return()=>clearTimeout(timer)},[view,search,statusFilter,hrFilter,ownerFilter,sourceFilter,minScore,maxScore,pageSize]);
@@ -60,7 +60,7 @@ export default function Page(){
    <label>Source<input className="ui-input" value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)} placeholder="e.g. AI Discovery"/></label>
    <label>Score from<input className="ui-input" type="number" min="0" max="100" value={minScore} onChange={e=>setMinScore(e.target.value)}/></label>
    <label>Score to<input className="ui-input" type="number" min="0" max="100" value={maxScore} onChange={e=>setMaxScore(e.target.value)}/></label>
-   {view==="table"?<label>Rows<select className="ui-input" value={pageSize} onChange={e=>setPageSize(Number(e.target.value))}>{[10,25,50].map(n=><option key={n}>{n}</option>)}</select></label>:null}
+   <label>Rows<select className="ui-input" value={pageSize} onChange={e=>setPageSize(Number(e.target.value))}>{[10,25,50].map(n=><option key={n}>{n}</option>)}</select></label>
   </div></div>
 
   {view==="kanban"?<><div className="leadKanban">{stages.map(stage=><section className="kanbanColumn" key={stage} onDragOver={e=>e.preventDefault()} onDrop={e=>{const id=e.dataTransfer.getData("leadId");if(id)void move(id,stage)}}><div className="kanbanHead"><strong>{stage}</strong><Badge>{data.filter(x=>x.status===stage).length}{pagination.page<pagination.totalPages?"+":""}</Badge></div><div className="kanbanCards">{data.filter(x=>x.status===stage).map((l,i)=><article className="leadCard leadReveal" style={{animationDelay:`${Math.min(i,12)*20}ms`,cursor:"pointer"}} draggable onDragStart={e=>e.dataTransfer.setData("leadId",l.id)} onClick={()=>void openDetail(l)} key={l.id}><div><strong>{l.firstName} {l.lastName}</strong><span>{l.company||"No company"}</span></div><p>{l.phone||l.email||"No contact"} · {l.source||"—"}</p><div className="leadMeta"><span>Score {l.score??0}</span><span>{l.owner?[l.owner.firstName,l.owner.lastName].join(" "):"Unassigned"}</span></div><select value={l.status} onClick={stop} onChange={e=>void move(l.id,e.target.value)}>{stages.map(s=><option key={s}>{s}</option>)}</select>{outcome(l)}</article>)}</div></section>)}</div><div ref={sentinel} style={{height:24,textAlign:"center",padding:8}}>{loadingMore?"Loading more leads…":pagination.page<pagination.totalPages?"Scroll for more":""}</div></>:
