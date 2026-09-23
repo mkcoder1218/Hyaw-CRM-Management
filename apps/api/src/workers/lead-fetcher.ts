@@ -61,7 +61,18 @@ export async function runLeadDiscovery(campaignId?:string){
   const cleanedTenants=new Set<string>();
   for(const campaign of campaigns){
    if(!cleanedTenants.has(campaign.tenantId)){cleaned+=await cleanupOldFalseLeads(campaign.tenantId);cleanedTenants.add(campaign.tenantId)}
-   const raw=(await Promise.all(discoveryQueries(campaign).map(q=>searchBusinessLeads(q)))).flat();
+   const queries=discoveryQueries(campaign);
+   const raw:any[]=[];
+   const concurrency=3;
+   for(let i=0;i<queries.length;i+=concurrency){
+    const batch=queries.slice(i,i+concurrency);
+    const settled=await Promise.allSettled(batch.map(q=>searchBusinessLeads(q)));
+    settled.forEach((result,index)=>{
+     if(result.status==="fulfilled")raw.push(...result.value);
+     else console.warn(`Business discovery skipped query "${batch[index]}":`,result.reason instanceof Error?result.reason.message:result.reason);
+    });
+    if(i+concurrency<queries.length)await sleep(250);
+   }
    const candidates=dedupeFormattedLeads(raw.map(x=>formatSearchCandidate(x,campaign)).filter((x):x is NonNullable<typeof x>=>Boolean(x)));
    candidates.sort((a,b)=>Number(Boolean(a.website))-Number(Boolean(b.website)));
    for(const lead of candidates){
