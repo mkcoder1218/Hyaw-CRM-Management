@@ -2,13 +2,15 @@ import {Router} from "express";import {z} from "zod";import {prisma} from "../db
 export const aiLeadsRouter=Router();aiLeadsRouter.use(requireAuth);aiLeadsRouter.use(requirePermission("settings.manage"));const tid=(r:any)=>String(r.auth!.tenantId);
 aiLeadsRouter.get("/",requirePermission("lead.view"),async(req,res,next)=>{try{
  const page=Math.max(1,Number(req.query.page)||1),pageSize=Math.min(100,Math.max(1,Number(req.query.pageSize)||25)),search=String(req.query.search||"").trim();
- const status=String(req.query.status||""),campaignId=String(req.query.campaignId||""),businessType=String(req.query.businessType||""),competitor=String(req.query.competitor||"ALL"),minFit=Math.min(100,Math.max(0,Number(req.query.minFit)||0));
+ const status=String(req.query.status||""),campaignId=String(req.query.campaignId||""),businessType=String(req.query.businessType||""),competitor=String(req.query.competitor||"ALL"),dbState=String(req.query.dbState||"ALL"),minFit=Math.min(100,Math.max(0,Number(req.query.minFit)||0));
  const where:any={tenantId:tid(req),fitScore:{gte:minFit}};
  if(search)where.OR=[{company:{contains:search,mode:"insensitive"}},{name:{contains:search,mode:"insensitive"}},{industry:{contains:search,mode:"insensitive"}},{location:{contains:search,mode:"insensitive"}},{phone:{contains:search,mode:"insensitive"}},{sourceName:{contains:search,mode:"insensitive"}}];
  if(status&&status!=="ALL")where.status=status;if(campaignId&&campaignId!=="ALL")where.campaignId=campaignId;if(businessType&&businessType!=="ALL")where.businessType=businessType;
  if(competitor==="YES")where.isCompetitor=true;if(competitor==="NO")where.isCompetitor=false;
+ if(dbState==="REGISTERED")where.convertedLeadId={not:null};if(dbState==="SEARCHED")where.convertedLeadId=null;
  const [data,total]=await Promise.all([prisma.discoveredLead.findMany({where,include:{campaign:true},orderBy:[{fitScore:"desc"},{discoveredAt:"desc"}],skip:(page-1)*pageSize,take:pageSize}),prisma.discoveredLead.count({where})]);
- res.json({data,pagination:{page,pageSize,total,totalPages:Math.max(1,Math.ceil(total/pageSize))}});
+ const enriched=data.map(x=>({...x,databaseState:x.convertedLeadId?"REGISTERED":"SEARCHED"}));
+ res.json({data:enriched,pagination:{page,pageSize,total,totalPages:Math.max(1,Math.ceil(total/pageSize))}});
 }catch(e){next(e)}});
 aiLeadsRouter.get("/campaigns",requirePermission("lead.view"),async(req,res,next)=>{try{res.json({data:await prisma.leadCampaign.findMany({where:{tenantId:tid(req)},orderBy:{createdAt:"desc"}})})}catch(e){next(e)}});
 aiLeadsRouter.post("/campaigns",requirePermission("lead.create"),async(req,res,next)=>{try{const p=z.object({name:z.string().min(2),product:z.string().min(2),query:z.string().min(2),location:z.string().optional(),industry:z.string().optional(),targetNotes:z.string().optional()}).safeParse(req.body);if(!p.success){res.status(400).json({message:"Invalid campaign",issues:p.error.issues});return}res.status(201).json({data:await prisma.leadCampaign.create({data:{tenantId:tid(req),...p.data}})})}catch(e){next(e)}});
