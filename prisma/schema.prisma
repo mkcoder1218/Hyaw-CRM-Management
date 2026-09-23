@@ -355,6 +355,8 @@ model CrmTask {
 enum DiscoveryLeadStatus {
   NEW
   REVIEWED
+  QUALIFIED
+  EXCLUDED
   CONVERTED
   REJECTED
 }
@@ -398,6 +400,11 @@ model DiscoveredLead {
   firstCallGoal String?
   objections Json?
   nextAction String?
+  qualificationReason String?
+  businessType String?
+  confidence Int @default(0)
+  isCompetitor Boolean @default(false)
+  rejectionReason String?
   rawData Json?
   status DiscoveryLeadStatus @default(NEW)
   convertedLeadId String?
