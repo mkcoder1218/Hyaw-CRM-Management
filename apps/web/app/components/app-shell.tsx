@@ -9,7 +9,7 @@ type NavItem={label:string;href:string;permission?:string};
 const items:NavItem[]=[
  {label:"Overview",href:"/"},
  {label:"Leads",href:"/leads",permission:"lead.view"},
- {label:"AI Lead Finder",href:"/ai-leads",permission:"lead.view"},
+ {label:"AI Lead Finder",href:"/ai-leads",permission:"lead.view"},\n {label:"New Requests",href:"/requests",permission:"lead.view"},
  {label:"Contacts",href:"/contacts",permission:"contact.view"},
  {label:"Companies",href:"/companies",permission:"company.view"},
  {label:"Opportunities",href:"/opportunities",permission:"opportunity.view"},
