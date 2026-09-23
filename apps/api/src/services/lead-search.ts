@@ -3,7 +3,9 @@ import {getPlatformValue} from "./platform-ai-settings";
 
 type Provider="SERPER"|"BRAVE"|"TAVILY"|"EXA";
 
-const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));\n\nasync function providerError(provider:string,r:Response){
+const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+
+async function providerError(provider:string,r:Response){
  let detail="";
  try{detail=(await r.text()).trim()}catch{}
  throw new Error(`${provider} lead search failed (${r.status})${detail?`: ${detail.slice(0,500)}`:""}`)
