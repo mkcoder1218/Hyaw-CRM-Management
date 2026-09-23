@@ -3,6 +3,7 @@ import {useEffect,useRef,useState} from "react";
 import {CreateModal,type CreateField} from "../components/create-modal";
 import {Badge} from "../../components/ui/badge";
 import {Button} from "../../components/ui/button";
+import {TableRowsSkeleton} from "../../components/ui/skeleton";
 
 const apiUrl=process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/,"")??"http://localhost:4000/api";
 const stages=["NEW","CONTACTED","QUALIFIED","PROPOSAL","WON","LOST"] as const;
@@ -14,19 +15,19 @@ export default function Page(){
  const[requestLead,setRequestLead]=useState<any>(null),[request,setRequest]=useState({problem:"",currentProcess:"",requestedSolution:"",message:""});
  const[search,setSearch]=useState(""),[statusFilter,setStatusFilter]=useState("ALL"),[hrFilter,setHrFilter]=useState("ALL"),[ownerFilter,setOwnerFilter]=useState("ALL"),[sourceFilter,setSourceFilter]=useState("");
  const[minScore,setMinScore]=useState(""),[maxScore,setMaxScore]=useState(""),[page,setPage]=useState(1),[pageSize,setPageSize]=useState(25),[pagination,setPagination]=useState({page:1,pageSize:25,total:0,totalPages:1});
- const[selected,setSelected]=useState<any>(null),[detailLoading,setDetailLoading]=useState(false),[loadingMore,setLoadingMore]=useState(false);
+ const[selected,setSelected]=useState<any>(null),[detailLoading,setDetailLoading]=useState(false),[loadingMore,setLoadingMore]=useState(false),[loading,setLoading]=useState(true);
  const sentinel=useRef<HTMLDivElement|null>(null);
 
  const query=(requestedPage:number,size:number)=>{const q=new URLSearchParams({page:String(requestedPage),pageSize:String(size)});if(search.trim())q.set("search",search.trim());if(statusFilter!=="ALL")q.set("status",statusFilter);if(hrFilter!=="ALL")q.set("hrOutcome",hrFilter);if(ownerFilter!=="ALL")q.set("ownerId",ownerFilter);if(sourceFilter.trim())q.set("source",sourceFilter.trim());if(minScore!=="")q.set("minScore",minScore);if(maxScore!=="")q.set("maxScore",maxScore);return q};
 
  async function load(reset=true){
-  try{
+  setLoading(true);try{
    const requestedPage=reset?page:1,size=pageSize;
    const[r,t]=await Promise.all([fetch(apiUrl+"/workspace/leads?"+query(requestedPage,size),{credentials:"include"}),fetch(apiUrl+"/workspace/team",{credentials:"include"})]);
    const b=await r.json();if(!r.ok)throw new Error(b.message||"Could not load leads");
    setData(Array.isArray(b.data)?b.data:[]);if(b.pagination)setPagination(b.pagination);
    if(t.ok){const tb=await t.json();setTeam(Array.isArray(tb.data)?tb.data:[])}setError("");
-  }catch(e){setError(e instanceof Error?e.message:"Could not load leads")}
+  }catch(e){setError(e instanceof Error?e.message:"Could not load leads")}finally{setLoading(false)}
  }
  async function loadMore(){
   if(view!=="kanban"||loadingMore||pagination.page>=pagination.totalPages)return;
@@ -49,7 +50,7 @@ export default function Page(){
  const outcome=(l:any)=><select value={l.hrCallOutcome||"NOT_CALLED"} onClick={stop} onChange={e=>void setOutcome(l,e.target.value)}>{hrOutcomes.map(s=><option value={s} key={s}>{s.replaceAll("_"," ")}</option>)}</select>;
 
  return <div className="placeholderPage">
-  <style>{`@keyframes leadReveal{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}.leadReveal{animation:leadReveal .28s ease both}`}</style>
+  <style>{`@keyframes leadReveal{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}.leadReveal,.tableRowReveal{animation:leadReveal .28s ease both}`}</style>
   <header><div><p className="eyebrow">Sales workspace</p><h1>Leads</h1><p>Start with Hyaw Workforce. If HR is not the need, discover another business problem and send it to Admin.</p></div><div className="actions"><Button variant="outline" onClick={()=>setView(view==="kanban"?"table":"kanban")}>{view==="kanban"?"Table view":"Kanban view"}</Button><CreateModal entity="lead" fields={modalFields} onCreated={create}/></div></header>
   {error?<p className="dataError">{error}</p>:null}
   <div className="ui-card"><div className="ui-card-content" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"end"}}>
@@ -64,7 +65,7 @@ export default function Page(){
   </div></div>
 
   {view==="kanban"?<><div className="leadKanban">{stages.map(stage=><section className="kanbanColumn" key={stage} onDragOver={e=>e.preventDefault()} onDrop={e=>{const id=e.dataTransfer.getData("leadId");if(id)void move(id,stage)}}><div className="kanbanHead"><strong>{stage}</strong><Badge>{data.filter(x=>x.status===stage).length}{pagination.page<pagination.totalPages?"+":""}</Badge></div><div className="kanbanCards">{data.filter(x=>x.status===stage).map((l,i)=><article className="leadCard leadReveal" style={{animationDelay:`${Math.min(i,12)*20}ms`,cursor:"pointer"}} draggable onDragStart={e=>e.dataTransfer.setData("leadId",l.id)} onClick={()=>void openDetail(l)} key={l.id}><div><strong>{l.firstName} {l.lastName}</strong><span>{l.company||"No company"}</span></div><p>{l.phone||l.email||"No contact"} · {l.source||"—"}</p><div className="leadMeta"><span>Score {l.score??0}</span><span>{l.owner?[l.owner.firstName,l.owner.lastName].join(" "):"Unassigned"}</span></div><select value={l.status} onClick={stop} onChange={e=>void move(l.id,e.target.value)}>{stages.map(s=><option key={s}>{s}</option>)}</select>{outcome(l)}</article>)}</div></section>)}</div><div ref={sentinel} style={{height:24,textAlign:"center",padding:8}}>{loadingMore?"Loading more leads…":pagination.page<pagination.totalPages?"Scroll for more":""}</div></>:
-  <div className="ui-card"><div className="ui-card-content" style={{overflowX:"auto"}}><table className="ui-table"><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Owner</th><th>Score</th><th>Status</th><th>HR outcome</th></tr></thead><tbody>{data.map(l=><tr key={l.id} onClick={()=>void openDetail(l)} style={{cursor:"pointer"}}><td><strong>{l.firstName} {l.lastName}</strong></td><td>{l.company||"—"}</td><td>{l.email||l.phone||"—"}</td><td>{l.source||"—"}</td><td>{l.owner?[l.owner.firstName,l.owner.lastName].join(" "):"Unassigned"}</td><td>{l.score??0}</td><td><select value={l.status} onClick={stop} onChange={e=>void move(l.id,e.target.value)}>{stages.map(s=><option key={s}>{s}</option>)}</select></td><td>{outcome(l)}</td></tr>)}</tbody></table>{!data.length?<p>No leads match these filters.</p>:null}</div></div>}
+  <div className="ui-card"><div className="ui-card-content" style={{overflowX:"auto"}}><table className="ui-table"><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Owner</th><th>Score</th><th>Status</th><th>HR outcome</th></tr></thead><tbody>{loading?<TableRowsSkeleton rows={Math.min(pageSize,8)} colSpan={8}/>:data.map((l,i)=><tr className="tableRowReveal" style={{animationDelay:`${Math.min(i,12)*35}ms`,cursor:"pointer"}} key={l.id} onClick={()=>void openDetail(l)}><td><strong>{l.firstName} {l.lastName}</strong></td><td>{l.company||"—"}</td><td>{l.email||l.phone||"—"}</td><td>{l.source||"—"}</td><td>{l.owner?[l.owner.firstName,l.owner.lastName].join(" "):"Unassigned"}</td><td>{l.score??0}</td><td><select value={l.status} onClick={stop} onChange={e=>void move(l.id,e.target.value)}>{stages.map(s=><option key={s}>{s}</option>)}</select></td><td>{outcome(l)}</td></tr>)}</tbody></table>{!loading&&!data.length?<p>No leads match these filters.</p>:null}</div></div>}
 
   {view==="table"?<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginTop:16}}><span>{pagination.total} leads · Page {pagination.page} of {pagination.totalPages}</span><div className="actions"><Button variant="outline" disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Previous</Button><Button variant="outline" disabled={page>=pagination.totalPages} onClick={()=>setPage(p=>p+1)}>Next</Button></div></div>:null}
 
