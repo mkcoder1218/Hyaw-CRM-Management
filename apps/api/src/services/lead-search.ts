@@ -7,8 +7,8 @@ const cleanPlaces=(items:any[]):SearchCandidate[]=>items.map((x:any)=>{
  const title=String(x.title||x.name||"").trim();
  const website=typeof x.website==="string"&&x.website.startsWith("http")?x.website:undefined;
  const cid=String(x.cid||x.placeId||x.place_id||"").trim();
- const link=String(x.link||x.url||x.mapsUrl||x.googleMapsUrl||"").trim()||(cid?`https://www.google.com/maps?cid=${encodeURIComponent(cid)}`:website||"");
- return {title,link,snippet:[x.category,x.address].filter(Boolean).join(" · ")||undefined,source:"serper-places",phone:String(x.phoneNumber||x.phone||"").trim()||undefined,address:String(x.address||"").trim()||undefined,website,category:String(x.category||x.type||"").trim()||undefined,kind:"BUSINESS" as const};
+ const address=String(x.address||"").trim();\n const link=String(x.link||x.url||x.mapsUrl||x.googleMapsUrl||"").trim()||(cid?`https://www.google.com/maps?cid=${encodeURIComponent(cid)}`:website||`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([title,address].filter(Boolean).join(" "))}`);
+ return {title,link,snippet:[x.category,x.address].filter(Boolean).join(" · ")||undefined,source:"serper-places",phone:String(x.phoneNumber||x.phone||"").trim()||undefined,address:address||undefined,website,category:String(x.category||x.type||"").trim()||undefined,kind:"BUSINESS" as const};
 }).filter((x:SearchCandidate)=>Boolean(x.title&&x.link));
 
 export async function searchBusinessLeads(query:string):Promise<SearchCandidate[]>{
