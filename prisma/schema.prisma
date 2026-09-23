@@ -23,6 +23,26 @@ enum LeadStatus {
   LOST
 }
 
+enum HrCallOutcome {
+  NOT_CALLED
+  NO_ANSWER
+  HR_INTERESTED
+  HR_NOT_NEEDED
+  OTHER_NEED_FOUND
+  NOT_INTERESTED
+}
+
+enum ClientRequestStatus {
+  NEW
+  REVIEWING
+  NEEDS_CLARIFICATION
+  APPROVED
+  PROPOSAL
+  IN_DEVELOPMENT
+  DELIVERED
+  CLOSED
+}
+
 enum ActivityType {
   NOTE
   CALL
@@ -61,6 +81,7 @@ model Tenant {
   crmTasks     CrmTask[]
   leadCampaigns LeadCampaign[]
   discoveredLeads DiscoveredLead[]
+  clientRequests ClientRequest[]
 }
 
 model User {
@@ -75,6 +96,7 @@ model User {
   ownedLeads   Lead[]       @relation("LeadOwner")
   activities   Activity[]
   sopRuns      SopRun[]     @relation("SopRunOwner")
+  submittedRequests ClientRequest[] @relation("ClientRequestSubmitter")
 }
 
 model TenantUser {
@@ -134,12 +156,14 @@ model Lead {
   score          Int         @default(0)
   estimatedValue Decimal     @default(0) @db.Decimal(14, 2)
   nextFollowUpAt DateTime?
+  hrCallOutcome HrCallOutcome @default(NOT_CALLED)
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   owner          User?       @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   activities     Activity[]
   sopRuns        SopRun[]
+  clientRequests ClientRequest[]
 
   @@index([tenantId, status])
   @@index([tenantId, ownerId])
@@ -415,4 +439,24 @@ model DiscoveredLead {
   @@unique([tenantId, sourceUrl])
   @@index([tenantId, status, fitScore])
   @@index([campaignId])
+}
+
+
+model ClientRequest {
+  id String @id @default(cuid())
+  tenantId String
+  leadId String
+  submittedById String
+  problem String
+  currentProcess String?
+  requestedSolution String?
+  message String
+  status ClientRequestStatus @default(NEW)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  submittedBy User @relation("ClientRequestSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  @@index([tenantId, status, createdAt])
+  @@index([leadId])
 }
