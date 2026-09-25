@@ -395,6 +395,11 @@ model LeadCampaign {
   industry String?
   targetNotes String?
   active Boolean @default(true)
+  runStatus String @default("IDLE")
+  runMessage String?
+  runStartedAt DateTime?
+  lastRunAt DateTime?
+  lastRunResult Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
