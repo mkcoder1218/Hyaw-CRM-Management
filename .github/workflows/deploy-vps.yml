@@ -192,42 +192,104 @@ jobs:
             elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
               SUDO="sudo"
             else
-              echo "Deployment user needs root or passwordless sudo to switch Nginx upstreams."
+              SUDO=""
+            fi
+
+            NGINX_MODE=""
+            NGINX_CONFIG=""
+            NGINX_CONTAINER=""
+
+            if [ -d /etc/nginx ]; then
+              NGINX_CONFIG="$($SUDO grep -RIlE 'server_name[[:space:]]+CRM\.hyaw\.tech' /etc/nginx 2>/dev/null | head -n 1 || true)"
+              if [ -n "$NGINX_CONFIG" ]; then
+                NGINX_MODE="host"
+              fi
+            fi
+
+            if [ -z "$NGINX_MODE" ]; then
+              for candidate in $(docker ps --format '{{.Names}}'); do
+                if docker exec "$candidate" sh -c 'command -v nginx >/dev/null 2>&1' >/dev/null 2>&1; then
+                  candidate_config="$(docker exec "$candidate" sh -c "grep -RIlE 'server_name[[:space:]]+CRM\\.hyaw\\.tech' /etc/nginx 2>/dev/null | head -n 1" 2>/dev/null || true)"
+                  if [ -n "$candidate_config" ]; then
+                    NGINX_MODE="container"
+                    NGINX_CONTAINER="$candidate"
+                    NGINX_CONFIG="$candidate_config"
+                    break
+                  fi
+                fi
+              done
+            fi
+
+            if [ -z "$NGINX_MODE" ]; then
+              echo "Could not locate the live Nginx config for CRM.hyaw.tech on the host or in a running Nginx container."
+              echo "Running containers:"
+              docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' || true
               cleanup_target
               exit 1
             fi
 
-            NGINX_CONFIG="$(grep -RIlE 'server_name[[:space:]]+CRM\.hyaw\.tech' /etc/nginx 2>/dev/null | head -n 1 || true)"
-            if [ -z "$NGINX_CONFIG" ]; then
-              echo "Could not locate the live Nginx config for CRM.hyaw.tech."
-              cleanup_target
-              exit 1
-            fi
-
+            echo "Nginx mode: $NGINX_MODE"
             echo "Switching Nginx config: $NGINX_CONFIG"
-            NGINX_BACKUP="/tmp/hyaw-crm-nginx.$$.bak"
-            $SUDO cp "$NGINX_CONFIG" "$NGINX_BACKUP"
+            if [ "$NGINX_MODE" = "container" ]; then
+              echo "Nginx container: $NGINX_CONTAINER"
+            fi
+
+            NGINX_BACKUP="/tmp/hyaw-crm-nginx.$.bak"
+
+            if [ "$NGINX_MODE" = "host" ]; then
+              $SUDO cp "$NGINX_CONFIG" "$NGINX_BACKUP"
+            else
+              docker cp "$NGINX_CONTAINER:$NGINX_CONFIG" "$NGINX_BACKUP"
+            fi
+
+            nginx_test() {
+              if [ "$NGINX_MODE" = "host" ]; then
+                $SUDO nginx -t
+              else
+                docker exec "$NGINX_CONTAINER" nginx -t
+              fi
+            }
+
+            nginx_reload() {
+              if [ "$NGINX_MODE" = "host" ]; then
+                $SUDO nginx -s reload
+              else
+                docker exec "$NGINX_CONTAINER" nginx -s reload
+              fi
+            }
 
             rollback_nginx() {
               echo "Rolling Nginx back to the previous slot..."
-              $SUDO cp "$NGINX_BACKUP" "$NGINX_CONFIG" || true
-              $SUDO nginx -t || true
-              $SUDO nginx -s reload || true
+              if [ "$NGINX_MODE" = "host" ]; then
+                $SUDO cp "$NGINX_BACKUP" "$NGINX_CONFIG" || true
+              else
+                docker cp "$NGINX_BACKUP" "$NGINX_CONTAINER:$NGINX_CONFIG" || true
+              fi
+              nginx_test || true
+              nginx_reload || true
             }
 
-            $SUDO sed -E -i \
-              -e "s#127\.0\.0\.1:(8000|8100)#127.0.0.1:$TARGET_WEB_PORT#g" \
-              -e "s#127\.0\.0\.1:(8001|8101)#127.0.0.1:$TARGET_ADMIN_PORT#g" \
-              -e "s#127\.0\.0\.1:(8002|8102)#127.0.0.1:$TARGET_API_PORT#g" \
-              "$NGINX_CONFIG"
+            if [ "$NGINX_MODE" = "host" ]; then
+              $SUDO sed -E -i \
+                -e "s#127\.0\.0\.1:(8000|8100)#127.0.0.1:$TARGET_WEB_PORT#g" \
+                -e "s#127\.0\.0\.1:(8001|8101)#127.0.0.1:$TARGET_ADMIN_PORT#g" \
+                -e "s#127\.0\.0\.1:(8002|8102)#127.0.0.1:$TARGET_API_PORT#g" \
+                "$NGINX_CONFIG"
+            else
+              docker exec "$NGINX_CONTAINER" sh -c "sed -E -i \
+                -e 's#127\\.0\\.0\\.1:(8000|8100)#127.0.0.1:$TARGET_WEB_PORT#g' \
+                -e 's#127\\.0\\.0\\.1:(8001|8101)#127.0.0.1:$TARGET_ADMIN_PORT#g' \
+                -e 's#127\\.0\\.0\\.1:(8002|8102)#127.0.0.1:$TARGET_API_PORT#g' \
+                '$NGINX_CONFIG'"
+            fi
 
-            if ! $SUDO nginx -t; then
+            if ! nginx_test; then
               rollback_nginx
               cleanup_target
               exit 1
             fi
 
-            if ! $SUDO nginx -s reload; then
+            if ! nginx_reload; then
               rollback_nginx
               cleanup_target
               exit 1
