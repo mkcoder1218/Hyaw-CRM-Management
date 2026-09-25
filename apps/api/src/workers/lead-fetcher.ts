@@ -63,15 +63,27 @@ export async function runLeadDiscovery(campaignId?:string){
    if(!cleanedTenants.has(campaign.tenantId)){cleaned+=await cleanupOldFalseLeads(campaign.tenantId);cleanedTenants.add(campaign.tenantId)}
    const queries=discoveryQueries(campaign);
    const raw:any[]=[];
+   const failures:string[]=[];
+   let successfulQueries=0;
    const concurrency=3;
    for(let i=0;i<queries.length;i+=concurrency){
     const batch=queries.slice(i,i+concurrency);
     const settled=await Promise.allSettled(batch.map(q=>searchBusinessLeads(q)));
     settled.forEach((result,index)=>{
-     if(result.status==="fulfilled")raw.push(...result.value);
-     else console.warn(`Business discovery skipped query "${batch[index]}":`,result.reason instanceof Error?result.reason.message:result.reason);
+     if(result.status==="fulfilled"){
+      successfulQueries++;
+      raw.push(...result.value);
+      return;
+     }
+     const message=result.reason instanceof Error?result.reason.message:String(result.reason);
+     failures.push(message);
+     console.warn(`Business discovery skipped query "${batch[index]}":`,message);
     });
     if(i+concurrency<queries.length)await sleep(250);
+   }
+   if(successfulQueries===0&&failures.length){
+    const unique=[...new Set(failures)];
+    throw new Error(`Lead discovery could not run: ${unique.join(" | ")}`);
    }
    const candidates=dedupeFormattedLeads(raw.map(x=>formatSearchCandidate(x,campaign)).filter((x):x is NonNullable<typeof x>=>Boolean(x)));
    candidates.sort((a,b)=>Number(Boolean(a.website))-Number(Boolean(b.website)));
