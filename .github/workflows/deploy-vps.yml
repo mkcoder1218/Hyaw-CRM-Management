@@ -48,13 +48,12 @@ jobs:
           SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
           SEED_SELLER_PASSWORD: ${{ secrets.SEED_SELLER_PASSWORD }}
           SEED_CALLER_PASSWORD: ${{ secrets.SEED_CALLER_PASSWORD }}
-          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
-          envs: DATABASE_URL,JWT_SECRET,SEED_SUPER_ADMIN_PASSWORD,SEED_ADMIN_PASSWORD,SEED_SELLER_PASSWORD,SEED_CALLER_PASSWORD,NEXT_PUBLIC_API_URL
+          envs: DATABASE_URL,JWT_SECRET,SEED_SUPER_ADMIN_PASSWORD,SEED_ADMIN_PASSWORD,SEED_SELLER_PASSWORD,SEED_CALLER_PASSWORD
           script: |
             set -eu
 
@@ -80,15 +79,15 @@ jobs:
             : "${SEED_SELLER_PASSWORD:?SEED_SELLER_PASSWORD GitHub secret is required}"
             : "${SEED_CALLER_PASSWORD:?SEED_CALLER_PASSWORD GitHub secret is required}"
 
-            if [ -z "${NEXT_PUBLIC_API_URL:-}" ]; then
-              NEXT_PUBLIC_API_URL="https://apiCRM.hyaw.tech/api"
-            fi
+            NEXT_PUBLIC_API_URL="/api"
+            INTERNAL_API_URL="http://crm-api:8002/api"
 
             umask 077
             cat > .env.production <<EOF
             DATABASE_URL=$DATABASE_URL
             API_PORT=8002
             NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+            INTERNAL_API_URL=$INTERNAL_API_URL
             JWT_SECRET=$JWT_SECRET
             SEED_SUPER_ADMIN_PASSWORD=$SEED_SUPER_ADMIN_PASSWORD
             SEED_ADMIN_PASSWORD=$SEED_ADMIN_PASSWORD
@@ -363,7 +362,12 @@ jobs:
               cleanup_target
               exit 1
             fi
-            if ! check_url "Public CRM API" "https://apicrm.hyaw.tech/api/health" 12 5; then
+            if ! check_url "Public CRM API through Web" "https://crm.hyaw.tech/api/health" 12 5; then
+              rollback_nginx
+              cleanup_target
+              exit 1
+            fi
+            if ! check_url "Public CRM API through Admin" "https://admincrm.hyaw.tech/api/health" 12 5; then
               rollback_nginx
               cleanup_target
               exit 1

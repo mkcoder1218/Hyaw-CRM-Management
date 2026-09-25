@@ -7,8 +7,10 @@ RUN pnpm install --no-frozen-lockfile
 FROM deps AS builder
 WORKDIR /app
 COPY . .
-ARG NEXT_PUBLIC_API_URL=https://apiCRM.hyaw.tech/api
+ARG NEXT_PUBLIC_API_URL=/api
+ARG INTERNAL_API_URL=http://crm-api:8002/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
 RUN pnpm db:generate
 RUN pnpm run-many:build
 

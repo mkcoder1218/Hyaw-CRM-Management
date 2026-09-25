@@ -4,7 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://apiCRM.hyaw.tech/api}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        INTERNAL_API_URL: ${INTERNAL_API_URL:-http://crm-api:8002/api}
     command: ["pnpm","exec","next","start","apps/web","-H","0.0.0.0","-p","8000"]
     restart: unless-stopped
     env_file: .env.production
@@ -19,7 +20,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://apiCRM.hyaw.tech/api}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        INTERNAL_API_URL: ${INTERNAL_API_URL:-http://crm-api:8002/api}
     command: ["pnpm","exec","next","start","apps/admin","-H","0.0.0.0","-p","8001"]
     restart: unless-stopped
     env_file: .env.production
