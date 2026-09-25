@@ -272,6 +272,35 @@ jobs:
               exit 1
             fi
 
+            echo "Running direct API authentication smoke test..."
+            AUTH_RESPONSE_FILE="/tmp/hyaw-crm-auth-response.$"
+            AUTH_STATUS="$(
+              curl --silent --show-error \
+                --output "$AUTH_RESPONSE_FILE" \
+                --write-out '%{http_code}' \
+                --max-time 20 \
+                -H 'Content-Type: application/json' \
+                --data "{\"email\":\"superadmin@hyaw.local\",\"password\":\"$SEED_SUPER_ADMIN_PASSWORD\"}" \
+                "http://$NGINX_GATEWAY:$TARGET_API_PORT/api/auth/login" || true
+            )"
+            if [ "$AUTH_STATUS" != "200" ]; then
+              echo "Direct API authentication smoke test failed with HTTP $AUTH_STATUS."
+              echo "Response:"
+              cat "$AUTH_RESPONSE_FILE" || true
+              echo
+              echo "CRM API logs:"
+              CRM_BIND_IP="$NGINX_GATEWAY" \
+              CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
+              CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
+              CRM_API_HOST_PORT="$TARGET_API_PORT" \
+              docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml logs --no-color --tail=200 crm-api || true
+              rm -f "$AUTH_RESPONSE_FILE"
+              cleanup_target
+              exit 1
+            fi
+            rm -f "$AUTH_RESPONSE_FILE"
+            echo "Direct API authentication smoke test passed."
+
             # Confirm the reverse proxy container can reach the new slot before switching.
             if ! docker exec "$NGINX_CONTAINER" sh -c "wget -qO- http://$NGINX_GATEWAY:$TARGET_API_PORT/api/health >/dev/null"; then
               echo "Nginx container cannot reach the new API slot."
