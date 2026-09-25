@@ -56,7 +56,7 @@ jobs:
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
           envs: DATABASE_URL,JWT_SECRET,SEED_SUPER_ADMIN_PASSWORD,SEED_ADMIN_PASSWORD,SEED_SELLER_PASSWORD,SEED_CALLER_PASSWORD,NEXT_PUBLIC_API_URL
           script: |
-            set -e
+            set -eu
 
             APP_DIR="${{ secrets.VPS_APP_DIR }}"
             if [ -z "$APP_DIR" ]; then
@@ -81,7 +81,7 @@ jobs:
             : "${SEED_SELLER_PASSWORD:?SEED_SELLER_PASSWORD GitHub secret is required}"
             : "${SEED_CALLER_PASSWORD:?SEED_CALLER_PASSWORD GitHub secret is required}"
 
-            if [ -z "$NEXT_PUBLIC_API_URL" ]; then
+            if [ -z "${NEXT_PUBLIC_API_URL:-}" ]; then
               NEXT_PUBLIC_API_URL="https://apiCRMhyaw.tech/api"
             fi
 
@@ -98,20 +98,11 @@ jobs:
             EOF
             chmod 600 .env.production
 
-            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans || {
-              echo "Deployment failed. CRM container status:"
-              docker compose --env-file .env.production -f docker-compose.prod.yml ps -a || true
-              echo "CRM API logs:"
-              docker compose --env-file .env.production -f docker-compose.prod.yml logs --no-color --tail=200 crm-api || true
-              exit 1
-            }
-            docker image prune -f
-
             check_url() {
               name="$1"
               url="$2"
-              attempts=18
-              delay=5
+              attempts="${3:-18}"
+              delay="${4:-5}"
 
               i=1
               while [ "$i" -le "$attempts" ]; do
@@ -119,17 +110,151 @@ jobs:
                   echo "$name is ready: $url"
                   return 0
                 fi
-                echo "$name not ready yet ($i/$attempts); retrying in 5s..."
+                echo "$name not ready yet ($i/$attempts); retrying in ${delay}s..."
                 sleep "$delay"
                 i=$((i + 1))
               done
 
               echo "$name failed readiness check: $url"
-              docker compose --env-file .env.production -f docker-compose.prod.yml ps -a || true
-              docker compose --env-file .env.production -f docker-compose.prod.yml logs --no-color --tail=200 || true
               return 1
             }
 
-            check_url "CRM API" "http://127.0.0.1:8002/api/health"
-            check_url "CRM Web" "http://127.0.0.1:8000/"
-            check_url "CRM Admin" "http://127.0.0.1:8001/"
+            ACTIVE_SLOT_FILE="$APP_DIR/.active-slot"
+            ACTIVE_SLOT=""
+            if [ -f "$ACTIVE_SLOT_FILE" ]; then
+              ACTIVE_SLOT="$(cat "$ACTIVE_SLOT_FILE" 2>/dev/null || true)"
+            fi
+
+            if [ "$ACTIVE_SLOT" = "green" ]; then
+              TARGET_SLOT="blue"
+              TARGET_WEB_PORT=8000
+              TARGET_ADMIN_PORT=8001
+              TARGET_API_PORT=8002
+              OLD_PROJECT="hyaw-crm-green"
+            else
+              TARGET_SLOT="green"
+              TARGET_WEB_PORT=8100
+              TARGET_ADMIN_PORT=8101
+              TARGET_API_PORT=8102
+              if [ "$ACTIVE_SLOT" = "blue" ]; then
+                OLD_PROJECT="hyaw-crm-blue"
+              else
+                OLD_PROJECT="hyaw-crm"
+              fi
+            fi
+
+            TARGET_PROJECT="hyaw-crm-$TARGET_SLOT"
+
+            echo "Active slot: ${ACTIVE_SLOT:-legacy}"
+            echo "Deploying inactive slot: $TARGET_SLOT"
+            echo "Target ports: web=$TARGET_WEB_PORT admin=$TARGET_ADMIN_PORT api=$TARGET_API_PORT"
+
+            cleanup_target() {
+              echo "Cleaning failed $TARGET_SLOT deployment..."
+              CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
+              CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
+              CRM_API_HOST_PORT="$TARGET_API_PORT" \
+              docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml down --remove-orphans || true
+            }
+
+            CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
+            CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
+            CRM_API_HOST_PORT="$TARGET_API_PORT" \
+            docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml up -d --build --remove-orphans || {
+              echo "New stack failed to start."
+              CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
+              CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
+              CRM_API_HOST_PORT="$TARGET_API_PORT" \
+              docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml ps -a || true
+              CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
+              CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
+              CRM_API_HOST_PORT="$TARGET_API_PORT" \
+              docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml logs --no-color --tail=200 || true
+              cleanup_target
+              exit 1
+            }
+
+            if ! check_url "CRM API ($TARGET_SLOT)" "http://127.0.0.1:$TARGET_API_PORT/api/health"; then
+              cleanup_target
+              exit 1
+            fi
+            if ! check_url "CRM Web ($TARGET_SLOT)" "http://127.0.0.1:$TARGET_WEB_PORT/"; then
+              cleanup_target
+              exit 1
+            fi
+            if ! check_url "CRM Admin ($TARGET_SLOT)" "http://127.0.0.1:$TARGET_ADMIN_PORT/"; then
+              cleanup_target
+              exit 1
+            fi
+
+            if [ "$(id -u)" -eq 0 ]; then
+              SUDO=""
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+              SUDO="sudo"
+            else
+              echo "Deployment user needs root or passwordless sudo to switch Nginx upstreams."
+              cleanup_target
+              exit 1
+            fi
+
+            NGINX_CONFIG="$(grep -RIlE 'server_name[[:space:]]+CRM\.hyaw\.tech' /etc/nginx 2>/dev/null | head -n 1 || true)"
+            if [ -z "$NGINX_CONFIG" ]; then
+              echo "Could not locate the live Nginx config for CRM.hyaw.tech."
+              cleanup_target
+              exit 1
+            fi
+
+            echo "Switching Nginx config: $NGINX_CONFIG"
+            NGINX_BACKUP="/tmp/hyaw-crm-nginx.$$.bak"
+            $SUDO cp "$NGINX_CONFIG" "$NGINX_BACKUP"
+
+            rollback_nginx() {
+              echo "Rolling Nginx back to the previous slot..."
+              $SUDO cp "$NGINX_BACKUP" "$NGINX_CONFIG" || true
+              $SUDO nginx -t || true
+              $SUDO nginx -s reload || true
+            }
+
+            $SUDO sed -E -i \
+              -e "s#127\.0\.0\.1:(8000|8100)#127.0.0.1:$TARGET_WEB_PORT#g" \
+              -e "s#127\.0\.0\.1:(8001|8101)#127.0.0.1:$TARGET_ADMIN_PORT#g" \
+              -e "s#127\.0\.0\.1:(8002|8102)#127.0.0.1:$TARGET_API_PORT#g" \
+              "$NGINX_CONFIG"
+
+            if ! $SUDO nginx -t; then
+              rollback_nginx
+              cleanup_target
+              exit 1
+            fi
+
+            if ! $SUDO nginx -s reload; then
+              rollback_nginx
+              cleanup_target
+              exit 1
+            fi
+
+            if ! check_url "Public CRM Web" "https://CRM.hyaw.tech/" 12 5; then
+              rollback_nginx
+              cleanup_target
+              exit 1
+            fi
+            if ! check_url "Public CRM Admin" "https://adminCRM.hyaw.tech/" 12 5; then
+              rollback_nginx
+              cleanup_target
+              exit 1
+            fi
+            if ! check_url "Public CRM API" "https://apiCRMhyaw.tech/api/health" 12 5; then
+              rollback_nginx
+              cleanup_target
+              exit 1
+            fi
+
+            printf '%s\n' "$TARGET_SLOT" > "$ACTIVE_SLOT_FILE"
+            rm -f "$NGINX_BACKUP"
+
+            echo "Traffic switched successfully to $TARGET_SLOT. Retiring $OLD_PROJECT..."
+            docker compose --env-file .env.production -p "$OLD_PROJECT" -f docker-compose.prod.yml down --remove-orphans || true
+
+            docker image prune -f
+
+            echo "Zero-downtime deployment complete. Active slot: $TARGET_SLOT"
