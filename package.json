@@ -22,7 +22,7 @@
     "db:clear-discovered-leads": "tsx prisma/clear-discovered-leads.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.16.2",
+    "@prisma/client": "6.16.2",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-select": "^2.2.6",
@@ -54,7 +54,7 @@
     "@types/react-dom": "^19.1.9",
     "nx": "^21.5.2",
     "prettier": "^3.6.2",
-    "prisma": "^6.16.2",
+    "prisma": "6.16.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "@types/jsonwebtoken": "^9.0.10"

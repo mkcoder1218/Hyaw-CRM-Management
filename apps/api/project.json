@@ -1,1 +1,36 @@
-{"name":"api","$schema":"../../node_modules/nx/schemas/project-schema.json","sourceRoot":"apps/api/src","projectType":"application","targets":{"dev":{"executor":"nx:run-commands","options":{"command":"tsx watch apps/api/src/main.ts"}},"build":{"executor":"nx:run-commands","options":{"command":"tsc -p apps/api/tsconfig.json"}},"typecheck":{"executor":"nx:run-commands","options":{"command":"tsc -p apps/api/tsconfig.json --noEmit"}}}}
+{
+  "name": "api",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/api/src",
+  "projectType": "application",
+  "targets": {
+    "generate": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "prisma generate"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["generate"],
+      "options": {
+        "command": "tsx watch apps/api/src/main.ts"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["generate"],
+      "options": {
+        "command": "tsc -p apps/api/tsconfig.json"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["generate"],
+      "options": {
+        "command": "tsc -p apps/api/tsconfig.json --noEmit"
+      }
+    }
+  }
+}
