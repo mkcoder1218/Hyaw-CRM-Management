@@ -82,9 +82,46 @@ jobs:
             NEXT_PUBLIC_API_URL="/api"
             INTERNAL_API_URL="http://crm-api:8002/api"
 
+            POSTGRES_CONTAINER=""
+            if docker ps --format '{{.Names}}' | grep -qx 'deploy-postgres-1'; then
+              POSTGRES_CONTAINER="deploy-postgres-1"
+            else
+              for candidate in $(docker ps --format '{{.Names}}'); do
+                image_name="$(docker inspect -f '{{.Config.Image}}' "$candidate" 2>/dev/null || true)"
+                case "$image_name" in
+                  postgres:*|postgres)
+                    POSTGRES_CONTAINER="$candidate"
+                    break
+                    ;;
+                esac
+              done
+            fi
+
+            if [ -z "$POSTGRES_CONTAINER" ]; then
+              echo "Could not find the running PostgreSQL container."
+              docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' || true
+              exit 1
+            fi
+
+            CRM_DB_NETWORK_NAME="$(
+              docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$POSTGRES_CONTAINER" |
+              head -n 1
+            )"
+            if [ -z "$CRM_DB_NETWORK_NAME" ]; then
+              echo "Could not determine the PostgreSQL Docker network."
+              exit 1
+            fi
+
+            DATABASE_URL_INTERNAL="$DATABASE_URL"
+            DATABASE_URL_INTERNAL="$(printf '%s' "$DATABASE_URL_INTERNAL" | sed -E "s#@localhost:5432#@$POSTGRES_CONTAINER:5432#; s#@127\\.0\\.0\\.1:5432#@$POSTGRES_CONTAINER:5432#")"
+
+            echo "Using PostgreSQL container: $POSTGRES_CONTAINER"
+            echo "Using PostgreSQL network: $CRM_DB_NETWORK_NAME"
+
             umask 077
             cat > .env.production <<EOF
-            DATABASE_URL=$DATABASE_URL
+            DATABASE_URL=$DATABASE_URL_INTERNAL
+            CRM_DB_NETWORK_NAME=$CRM_DB_NETWORK_NAME
             API_PORT=8002
             NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
             INTERNAL_API_URL=$INTERNAL_API_URL
@@ -233,6 +270,7 @@ jobs:
             cleanup_target() {
               echo "Cleaning failed $TARGET_SLOT deployment..."
               CRM_BIND_IP="$NGINX_GATEWAY" \
+              CRM_DB_NETWORK_NAME="$CRM_DB_NETWORK_NAME" \
               CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
               CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
               CRM_API_HOST_PORT="$TARGET_API_PORT" \
@@ -240,17 +278,20 @@ jobs:
             }
 
             CRM_BIND_IP="$NGINX_GATEWAY" \
+            CRM_DB_NETWORK_NAME="$CRM_DB_NETWORK_NAME" \
             CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
             CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
             CRM_API_HOST_PORT="$TARGET_API_PORT" \
             docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml up -d --build --remove-orphans || {
               echo "New stack failed to start."
               CRM_BIND_IP="$NGINX_GATEWAY" \
+              CRM_DB_NETWORK_NAME="$CRM_DB_NETWORK_NAME" \
               CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
               CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
               CRM_API_HOST_PORT="$TARGET_API_PORT" \
               docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml ps -a || true
               CRM_BIND_IP="$NGINX_GATEWAY" \
+              CRM_DB_NETWORK_NAME="$CRM_DB_NETWORK_NAME" \
               CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
               CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
               CRM_API_HOST_PORT="$TARGET_API_PORT" \
@@ -258,6 +299,22 @@ jobs:
               cleanup_target
               exit 1
             }
+
+            echo "Synchronizing CRM database schema..."
+            if ! CRM_DB_NETWORK_NAME="$CRM_DB_NETWORK_NAME" docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml exec -T crm-api pnpm db:push; then
+              echo "Prisma schema synchronization failed."
+              CRM_DB_NETWORK_NAME="$CRM_DB_NETWORK_NAME" docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml logs --no-color --tail=200 crm-api || true
+              cleanup_target
+              exit 1
+            fi
+
+            echo "Seeding CRM roles and accounts..."
+            if ! CRM_DB_NETWORK_NAME="$CRM_DB_NETWORK_NAME" docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml exec -T crm-api pnpm db:seed; then
+              echo "CRM seed failed."
+              CRM_DB_NETWORK_NAME="$CRM_DB_NETWORK_NAME" docker compose --env-file .env.production -p "$TARGET_PROJECT" -f docker-compose.prod.yml logs --no-color --tail=200 crm-api || true
+              cleanup_target
+              exit 1
+            fi
 
             if ! check_url "CRM API ($TARGET_SLOT)" "http://$NGINX_GATEWAY:$TARGET_API_PORT/api/health"; then
               cleanup_target
@@ -290,6 +347,7 @@ jobs:
               echo
               echo "CRM API logs:"
               CRM_BIND_IP="$NGINX_GATEWAY" \
+              CRM_DB_NETWORK_NAME="$CRM_DB_NETWORK_NAME" \
               CRM_WEB_HOST_PORT="$TARGET_WEB_PORT" \
               CRM_ADMIN_HOST_PORT="$TARGET_ADMIN_PORT" \
               CRM_API_HOST_PORT="$TARGET_API_PORT" \
