@@ -21,4 +21,4 @@ sudo systemctl reload nginx
 echo "Create $APP_DIR/.env.production, then run:"
 echo "cd $APP_DIR && docker compose -f docker-compose.prod.yml up -d --build"
 echo "After DNS points to this VPS, enable TLS:"
-echo "sudo certbot --nginx -d CRM.hyaw.tech -d adminCRM.hyaw.tech -d apiCRMhyaw.tech"
+echo "sudo certbot --nginx -d CRM.hyaw.tech -d adminCRM.hyaw.tech -d apiCRM.hyaw.tech"

@@ -81,7 +81,7 @@ jobs:
             : "${SEED_CALLER_PASSWORD:?SEED_CALLER_PASSWORD GitHub secret is required}"
 
             if [ -z "${NEXT_PUBLIC_API_URL:-}" ]; then
-              NEXT_PUBLIC_API_URL="https://apiCRMhyaw.tech/api"
+              NEXT_PUBLIC_API_URL="https://apiCRM.hyaw.tech/api"
             fi
 
             umask 077
@@ -308,12 +308,16 @@ jobs:
             edit_nginx_file() {
               if [ "$NGINX_EDIT_MODE" = "host-mount" ]; then
                 sed -E -i \
+                  -e "s#apiCRMhyaw\\.tech#apiCRM.hyaw.tech#g" \
+                  -e "s#apicrmhyaw\\.tech#apicrm.hyaw.tech#g" \
                   -e "s#(proxy_pass[[:space:]]+http://)[^;[:space:]]+:(8000|8100);#\\1$NGINX_GATEWAY:$TARGET_WEB_PORT;#g" \
                   -e "s#(proxy_pass[[:space:]]+http://)[^;[:space:]]+:(8001|8101);#\\1$NGINX_GATEWAY:$TARGET_ADMIN_PORT;#g" \
                   -e "s#(proxy_pass[[:space:]]+http://)[^;[:space:]]+:(8002|8102);#\\1$NGINX_GATEWAY:$TARGET_API_PORT;#g" \
                   "$NGINX_EDIT_PATH"
               else
                 docker exec "$NGINX_CONTAINER" sh -c "sed -E -i \
+                  -e 's#apiCRMhyaw\\.tech#apiCRM.hyaw.tech#g' \
+                  -e 's#apicrmhyaw\\.tech#apicrm.hyaw.tech#g' \
                   -e 's#(proxy_pass[[:space:]]+http://)[^;[:space:]]+:(8000|8100);#\\1$NGINX_GATEWAY:$TARGET_WEB_PORT;#g' \
                   -e 's#(proxy_pass[[:space:]]+http://)[^;[:space:]]+:(8001|8101);#\\1$NGINX_GATEWAY:$TARGET_ADMIN_PORT;#g' \
                   -e 's#(proxy_pass[[:space:]]+http://)[^;[:space:]]+:(8002|8102);#\\1$NGINX_GATEWAY:$TARGET_API_PORT;#g' \
@@ -359,7 +363,7 @@ jobs:
               cleanup_target
               exit 1
             fi
-            if ! check_url "Public CRM API" "https://apicrmhyaw.tech/api/health" 12 5; then
+            if ! check_url "Public CRM API" "https://apicrm.hyaw.tech/api/health" 12 5; then
               rollback_nginx
               cleanup_target
               exit 1
