@@ -88,6 +88,7 @@ export default function AdminPage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [moduleLoading, setModuleLoading] = useState(false);
   const [businessMenu, setBusinessMenu] = useState<string | null>(null);
+  const [showCreateBusiness, setShowCreateBusiness] = useState(false);
   const [businessAction, setBusinessAction] = useState<{ tenant: Tenant; type: "edit" | "subscription" | "users" | "roles" | "settings" | "status" } | null>(null);
   const [apiState, setApiState] = useState<"loading" | "online" | "offline">(
     "loading",
@@ -219,7 +220,7 @@ export default function AdminPage() {
             </p>
           </div>
           {section === "businesses" || section === "overview" ? (
-            <Button type="button" onClick={() => setSection("businesses")}>
+            <Button type="button" onClick={() => { setSection("businesses"); setShowCreateBusiness(true); }}>
               + Add business
             </Button>
           ) : null}
@@ -245,6 +246,7 @@ export default function AdminPage() {
           <AdminModule section={section} data={moduleData} loading={moduleLoading} reload={() => setSection(section)} />
         )}
       </section>
+      {showCreateBusiness ? <CreateBusinessModal onClose={() => setShowCreateBusiness(false)} onCreated={refreshAdminData} /> : null}
       {businessAction ? <BusinessActionModal action={businessAction} onClose={() => setBusinessAction(null)} onSaved={refreshAdminData} /> : null}
     </main>
   );
@@ -354,6 +356,133 @@ function PlatformSettings({data}:{data:any}) {
  const selected=models[provider]??models.GROQ; const currentModel=selected.some(x=>x.value===data?.aiModel)?data.aiModel:selected[0].value;
  return <div className="platform-settings-layout"><Card><CardHeader><CardTitle>General</CardTitle><CardDescription>Defaults for the whole Hyaw CRM platform.</CardDescription></CardHeader><CardContent><form className="business-form" onSubmit={general}><div className="form-grid"><label>Platform name<input name="platformName" defaultValue={data?.platformName??"Hyaw CRM"} required/></label><label>Support email<input name="supportEmail" type="email" defaultValue={data?.supportEmail??"support@hyaw.tech"} required/></label><label>Default plan<input name="defaultPlan" defaultValue={data?.defaultPlan??"Starter"} required/></label><label>Default seats<input name="defaultSeats" type="number" min="1" defaultValue={data?.defaultSeats??5} required/></label><label>Trial days<input name="trialDays" type="number" min="0" defaultValue={data?.trialDays??14} required/></label></div><label className="toggle-row"><span><strong>Allow trials</strong><small>Allow newly created businesses to start on a trial.</small></span><input name="allowTrials" type="checkbox" defaultChecked={data?.allowTrials??true}/></label><div className="business-form-actions"><Button disabled={saving} type="submit">{saving?"Saving...":"Save platform settings"}</Button></div></form></CardContent></Card>
  <Card><CardHeader><CardTitle>AI & lead discovery</CardTitle><CardDescription>Choose the AI and web-search providers used by the calling expert and lead finder.</CardDescription></CardHeader><CardContent><form className="business-form" onSubmit={ai}><label>AI provider<select name="aiProvider" value={provider} onChange={e=>setProvider(e.target.value)}><option value="GROQ">Groq</option><option value="OPENAI">OpenAI</option><option value="GEMINI">Google Gemini</option><option value="ANTHROPIC">Anthropic</option></select></label><label>AI model<select key={provider} name="aiModel" defaultValue={currentModel}>{selected.map(m=><option key={m.value} value={m.value}>{m.label}</option>)}</select></label><label>{provider==="GROQ"?"Groq":provider==="OPENAI"?"OpenAI":provider==="GEMINI"?"Gemini":"Anthropic"} API key<input name="aiApiKey" type="password" autoComplete="new-password" placeholder={data?.aiApiKeyMasked?"Configured: "+data.aiApiKeyMasked:"Paste provider API key"}/></label><label>Lead search provider<select name="leadSearchProvider" defaultValue={data?.leadSearchProvider??"SERPER"}><option value="SERPER">Serper</option><option value="BRAVE">Brave Search</option><option value="TAVILY">Tavily</option><option value="EXA">Exa</option></select></label><label>Search API key<input name="leadSearchApiKey" type="password" autoComplete="new-password" placeholder={data?.leadSearchApiKeyMasked?"Configured: "+data.leadSearchApiKeyMasked:"Paste selected provider API key"}/></label><p>Provider keys are encrypted before storage and never returned in full.</p>{message?<p className="settings-message">{message}</p>:null}<Button disabled={saving} type="submit">{saving?"Saving...":"Save AI settings"}</Button></form></CardContent></Card></div>;
+}
+
+
+function CreateBusinessModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [slug, setSlug] = useState("");
+
+  function toSlug(value: string) {
+    return value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  async function create(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+
+    const form = new FormData(event.currentTarget);
+    const body = {
+      name: String(form.get("name") ?? "").trim(),
+      slug: String(form.get("slug") ?? "").trim(),
+      status: String(form.get("status") ?? "TRIAL"),
+      plan: String(form.get("plan") ?? "Starter").trim(),
+      seats: Number(form.get("seats") ?? 1),
+    };
+
+    try {
+      const response = await fetch(`${apiUrl}/admin/tenants`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      let result: any = {};
+      if (text) {
+        try {
+          result = JSON.parse(text);
+        } catch {
+          result = {};
+        }
+      }
+      if (!response.ok) {
+        const issue = Array.isArray(result?.issues) ? result.issues[0]?.message : null;
+        throw new Error(issue ?? result?.message ?? `Could not create business (HTTP ${response.status})`);
+      }
+      await onCreated();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create business");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="business-modal-backdrop" onMouseDown={onClose}>
+      <section className="business-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="business-modal-head">
+          <div>
+            <small>Platform business</small>
+            <h3>Add business</h3>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close add business modal">×</button>
+        </div>
+        <form className="business-form" onSubmit={create}>
+          <div className="form-section-title">
+            <strong>Business identity</strong>
+            <small>Create the tenant and its initial subscription.</small>
+          </div>
+          <label>
+            Business name
+            <input
+              name="name"
+              required
+              minLength={2}
+              autoFocus
+              onChange={(event) => {
+                if (!slugTouched) setSlug(toSlug(event.target.value));
+              }}
+            />
+          </label>
+          <label>
+            Workspace slug
+            <input
+              name="slug"
+              value={slug}
+              required
+              minLength={2}
+              pattern="[a-z0-9-]+"
+              onChange={(event) => {
+                setSlugTouched(true);
+                setSlug(toSlug(event.target.value));
+              }}
+            />
+          </label>
+          <div className="form-grid">
+            <label>
+              Status
+              <select name="status" defaultValue="TRIAL">
+                <option value="TRIAL">TRIAL</option>
+                <option value="ACTIVE">ACTIVE</option>
+              </select>
+            </label>
+            <label>
+              Plan
+              <input name="plan" defaultValue="Starter" required />
+            </label>
+            <label>
+              Seats
+              <input name="seats" type="number" min="1" defaultValue="1" required />
+            </label>
+          </div>
+          {error ? <p className="business-form-error">{error}</p> : null}
+          <div className="business-form-actions">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={busy}>{busy ? "Creating..." : "Create business"}</Button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 type BusinessAction = { tenant: Tenant; type: "edit" | "subscription" | "users" | "roles" | "settings" | "status" };
