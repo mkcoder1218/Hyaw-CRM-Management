@@ -385,6 +385,10 @@ function CreateBusinessModal({ onClose, onCreated }: { onClose: () => void; onCr
       status: String(form.get("status") ?? "TRIAL"),
       plan: String(form.get("plan") ?? "Starter").trim(),
       seats: Number(form.get("seats") ?? 1),
+      adminFirstName: String(form.get("adminFirstName") ?? "").trim(),
+      adminLastName: String(form.get("adminLastName") ?? "").trim(),
+      adminEmail: String(form.get("adminEmail") ?? "").trim(),
+      adminPassword: String(form.get("adminPassword") ?? ""),
     };
 
     try {
@@ -474,6 +478,16 @@ function CreateBusinessModal({ onClose, onCreated }: { onClose: () => void; onCr
               <input name="seats" type="number" min="1" defaultValue="1" required />
             </label>
           </div>
+          <div className="form-section-title">
+            <strong>Business administrator</strong>
+            <small>Create the login account that will administer this business.</small>
+          </div>
+          <div className="form-grid">
+            <label>First name<input name="adminFirstName" required /></label>
+            <label>Last name<input name="adminLastName" required /></label>
+          </div>
+          <label>Admin email<input name="adminEmail" type="email" autoComplete="username" required /></label>
+          <label>Admin password<input name="adminPassword" type="password" minLength={8} autoComplete="new-password" required /></label>
           {error ? <p className="business-form-error">{error}</p> : null}
           <div className="business-form-actions">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
@@ -488,9 +502,36 @@ function CreateBusinessModal({ onClose, onCreated }: { onClose: () => void; onCr
 type BusinessAction = { tenant: Tenant; type: "edit" | "subscription" | "users" | "roles" | "settings" | "status" };
 function BusinessActionModal({ action, onClose, onSaved }: { action: BusinessAction; onClose: () => void; onSaved: () => Promise<void> }) {
   const [busy,setBusy]=useState(false); const [error,setError]=useState(""); const [data,setData]=useState<any>([]);
-  useEffect(()=>{ if(["users","roles","settings"].includes(action.type)) fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/${action.type}`,{credentials:"include"}).then(r=>r.json()).then(b=>setData(b.data??[])).catch(()=>setError("Could not load data")); },[action]);
+  const [roles,setRoles]=useState<any[]>([]);
+
+  async function loadUsers(){
+    const [usersResponse, rolesResponse] = await Promise.all([
+      fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/users`,{credentials:"include"}),
+      fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/roles`,{credentials:"include"}),
+    ]);
+    const usersBody=await usersResponse.json();
+    const rolesBody=await rolesResponse.json();
+    if(!usersResponse.ok) throw new Error(usersBody.message??"Could not load users");
+    if(!rolesResponse.ok) throw new Error(rolesBody.message??"Could not load roles");
+    setData(usersBody.data??[]);
+    setRoles(rolesBody.data?.roles??[]);
+  }
+
+  useEffect(()=>{
+    setError("");
+    if(action.type==="users"||action.type==="edit"){
+      void loadUsers().catch(()=>setError("Could not load business users"));
+      return;
+    }
+    if(["roles","settings"].includes(action.type)){
+      fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/${action.type}`,{credentials:"include"})
+        .then(r=>r.json())
+        .then(b=>setData(b.data??[]))
+        .catch(()=>setError("Could not load data"));
+    }
+  },[action]);
   async function save(event: React.FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);setError("");const f=new FormData(event.currentTarget);let path=`/admin/tenants/${action.tenant.id}`;let body:any={};
-    if(action.type==="edit") body={name:f.get("name"),slug:f.get("slug"),status:f.get("status")};
+    if(action.type==="edit") body={name:f.get("name"),slug:f.get("slug"),status:f.get("status"),adminEmail:f.get("adminEmail")||undefined,adminPassword:f.get("adminPassword")||undefined};
     if(action.type==="settings"){path+="/settings";body={timezone:f.get("timezone"),currency:f.get("currency"),locale:f.get("locale"),leadAssignment:f.get("leadAssignment"),callerTracking:f.get("callerTracking")==="on"};}
     if(action.type==="subscription"){path+="/subscription";body={plan:f.get("plan"),seats:Number(f.get("seats")),status:f.get("subscriptionStatus")};}
     if(action.type==="status") body={status:action.tenant.status==="SUSPENDED"?"ACTIVE":"SUSPENDED"};
@@ -498,10 +539,27 @@ function BusinessActionModal({ action, onClose, onSaved }: { action: BusinessAct
   }
   const title={edit:"Edit business",subscription:"Subscription",users:"Manage users",roles:"Roles & permissions",settings:"Business settings",status:action.tenant.status==="SUSPENDED"?"Reactivate business":"Suspend business"}[action.type];
   return <div className="business-modal-backdrop" onMouseDown={onClose}><section className="business-modal" onMouseDown={e=>e.stopPropagation()}><div className="business-modal-head"><div><small>{action.tenant.name}</small><h3>{title}</h3></div><button type="button" onClick={onClose}>×</button></div>
-    {action.type==="users"?<div className="business-list">{data.map((m:any)=><div key={m.id}><span><strong>{m.user.firstName} {m.user.lastName}</strong><small>{m.user.email}</small></span><div className="member-actions"><select defaultValue={m.role?.id??""} onChange={async e=>{await fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/users/${m.id}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({roleId:e.target.value||null})});}}><option value="">No role</option><option value={m.role?.id??""}>{m.role?.name??"Current role"}</option></select><button type="button" onClick={async()=>{await fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/users/${m.id}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({active:!m.user.active})});setData((old:any[])=>old.map(x=>x.id===m.id?{...x,user:{...x.user,active:!x.user.active}}:x));}}>{m.user.active?"Disable":"Enable"}</button></div></div>)}</div>
+    {action.type==="users"?<div>
+      <form className="business-form" onSubmit={async e=>{e.preventDefault();setBusy(true);setError("");const f=new FormData(e.currentTarget);try{const r=await fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/users`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({firstName:f.get("firstName"),lastName:f.get("lastName"),email:f.get("email"),password:f.get("password"),roleId:f.get("roleId")||null})});const b=await r.json();if(!r.ok)throw new Error(b.message??"Could not add user");e.currentTarget.reset();await loadUsers();await onSaved();}catch(err){setError(err instanceof Error?err.message:"Could not add user")}finally{setBusy(false)}}}>
+        <div className="form-section-title"><strong>Add business user</strong><small>Create login credentials and assign a role.</small></div>
+        <div className="form-grid"><label>First name<input name="firstName" required/></label><label>Last name<input name="lastName" required/></label></div>
+        <label>Email<input name="email" type="email" autoComplete="username" required/></label>
+        <label>Password<input name="password" type="password" minLength={8} autoComplete="new-password" required/></label>
+        <label>Role<select name="roleId" defaultValue=""><option value="">No role</option>{roles.map((r:any)=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+        <div className="business-form-actions"><Button type="submit" disabled={busy}>{busy?"Adding...":"Add user"}</Button></div>
+      </form>
+      {error?<p className="business-form-error">{error}</p>:null}
+      <div className="business-list">{data.map((m:any)=><form key={m.id} className="business-form" onSubmit={async e=>{e.preventDefault();setError("");const f=new FormData(e.currentTarget);const body:any={firstName:f.get("firstName"),lastName:f.get("lastName"),email:f.get("email"),roleId:f.get("roleId")||null};const password=String(f.get("password")??"");if(password)body.password=password;const r=await fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/users/${m.id}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const b=await r.json();if(!r.ok){setError(b.message??"Could not update user");return;}await loadUsers();}}>
+        <div className="form-grid"><label>First name<input name="firstName" defaultValue={m.user.firstName} required/></label><label>Last name<input name="lastName" defaultValue={m.user.lastName} required/></label></div>
+        <label>Email<input name="email" type="email" defaultValue={m.user.email} required/></label>
+        <label>New password<input name="password" type="password" minLength={8} autoComplete="new-password" placeholder="Leave blank to keep current password"/></label>
+        <label>Role<select name="roleId" defaultValue={m.role?.id??""}><option value="">No role</option>{roles.map((r:any)=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+        <div className="business-form-actions"><Button type="button" variant="outline" onClick={async()=>{const r=await fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/users/${m.id}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({active:!m.user.active})});if(r.ok)await loadUsers();}}>{m.user.active?"Disable":"Enable"}</Button><Button type="submit">Save user</Button></div>
+      </form>)}</div>
+    </div>
     :action.type==="roles"?<div className="role-grid">{data.roles?.map((r:any)=><section className="role-card" key={r.id}><div><strong>{r.name}</strong><small>{r._count.members} users · {r.permissions.length} permissions</small></div><div className="permission-grid">{data.permissions?.map((p:any)=><label key={p.id}><input type="checkbox" defaultChecked={r.permissions.some((rp:any)=>rp.permission.id===p.id)} onChange={async e=>{const current=r.permissions.map((rp:any)=>rp.permission.id);const ids=e.target.checked?[...new Set([...current,p.id])]:current.filter((id:string)=>id!==p.id);await fetch(`${apiUrl}/admin/tenants/${action.tenant.id}/roles/${r.id}/permissions`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({permissionIds:ids})});r.permissions=data.permissions.filter((x:any)=>ids.includes(x.id)).map((permission:any)=>({permission}));}}/><span>{p.description??p.key}</span></label>)}</div></section>)}</div>
     :<form className="business-form" onSubmit={save}>
-      {action.type==="edit"&&<><div className="form-section-title"><strong>Business identity</strong><small>Core tenant information used across the platform.</small></div><label>Business name<input name="name" defaultValue={action.tenant.name} required/></label><label>Workspace slug<input name="slug" defaultValue={action.tenant.slug} required/></label><label>Business status<select name="status" defaultValue={action.tenant.status}><option>ACTIVE</option><option>TRIAL</option><option>SUSPENDED</option><option>CANCELLED</option></select></label></>}
+      {action.type==="edit"&&<><div className="form-section-title"><strong>Business identity</strong><small>Core tenant information used across the platform.</small></div><label>Business name<input name="name" defaultValue={action.tenant.name} required/></label><label>Workspace slug<input name="slug" defaultValue={action.tenant.slug} required/></label><label>Business status<select name="status" defaultValue={action.tenant.status}><option>ACTIVE</option><option>TRIAL</option><option>SUSPENDED</option><option>CANCELLED</option></select></label><div className="form-section-title"><strong>Business administrator</strong><small>Update the primary ADMIN login. Leave password blank to keep the current password.</small></div><label>Admin email<input key={(Array.isArray(data)?data.find((m:any)=>m.role?.name==="ADMIN")?.user.email:"")||"admin-email"} name="adminEmail" type="email" defaultValue={Array.isArray(data)?data.find((m:any)=>m.role?.name==="ADMIN")?.user.email??"":""}/></label><label>New admin password<input name="adminPassword" type="password" minLength={8} autoComplete="new-password" placeholder="Leave blank to keep current password"/></label></>}
       {action.type==="settings"&&<><div className="form-section-title"><strong>Workspace defaults</strong><small>Operational defaults applied inside this business.</small></div><div className="form-grid"><label>Timezone<input name="timezone" defaultValue={data.timezone??"Africa/Addis_Ababa"} required/></label><label>Currency<input name="currency" defaultValue={data.currency??"ETB"} maxLength={3} required/></label><label>Locale<input name="locale" defaultValue={data.locale??"en"} required/></label><label>Lead assignment<select name="leadAssignment" defaultValue={data.leadAssignment??"manual"}><option value="manual">Manual</option><option value="round_robin">Round robin</option></select></label></div><label className="toggle-row"><span><strong>Caller activity tracking</strong><small>Record caller activity for reporting and performance tracking.</small></span><input name="callerTracking" type="checkbox" defaultChecked={data.callerTracking??true}/></label></>}
       {action.type==="subscription"&&<><label>Plan<input name="plan" defaultValue={action.tenant.plan} required/></label><label>Seats<input name="seats" type="number" min="1" defaultValue={Math.max(action.tenant.userCount,1)} required/></label><label>Subscription status<select name="subscriptionStatus" defaultValue={action.tenant.subscriptionStatus??"ACTIVE"}><option>ACTIVE</option><option>TRIAL</option><option>PAST_DUE</option><option>CANCELLED</option></select></label></>}
       {action.type==="status"&&<p className="business-confirm">This will {action.tenant.status==="SUSPENDED"?"restore":"block"} workspace access for <strong>{action.tenant.name}</strong>.</p>}

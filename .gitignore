@@ -1,8 +1,7 @@
 node_modules
 .next
 dist
-.env
-.env.*
 !.env.example
 coverage
 .DS_Store
+config.bat

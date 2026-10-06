@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { prisma } from "../db";
 import { requireAuth } from "../auth";
 import { getPlatformValue, maskSecret, setPlatformValue } from "../services/platform-ai-settings";
@@ -25,6 +26,10 @@ const createTenantSchema = z.object({
   status: tenantStatusSchema.default("TRIAL"),
   plan: z.string().min(1).default("Starter"),
   seats: z.number().int().positive().default(1),
+  adminEmail: z.string().email(),
+  adminPassword: z.string().min(8),
+  adminFirstName: z.string().min(1).default("Business"),
+  adminLastName: z.string().min(1).default("Admin"),
 });
 
 
@@ -32,6 +37,8 @@ const updateTenantSchema = z.object({
   name: z.string().min(2).optional(),
   slug: z.string().min(2).regex(/^[a-z0-9-]+$/).optional(),
   status: tenantStatusSchema.optional(),
+  adminEmail: z.string().email().optional(),
+  adminPassword: z.string().min(8).optional(),
 });
 const tenantSettingsSchema = z.object({
   timezone: z.string().min(1),
@@ -40,7 +47,21 @@ const tenantSettingsSchema = z.object({
   leadAssignment: z.enum(["manual", "round_robin"]),
   callerTracking: z.boolean(),
 });
-const membershipSchema = z.object({ roleId: z.string().min(1).nullable().optional(), active: z.boolean().optional() });
+const membershipSchema = z.object({
+  roleId: z.string().min(1).nullable().optional(),
+  active: z.boolean().optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(8).optional(),
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+});
+const createMembershipSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  roleId: z.string().min(1).nullable().optional(),
+});
 const rolePermissionsSchema = z.object({ permissionIds: z.array(z.string()).default([]) });
 const userUpdateSchema = z.object({ active: z.boolean() });
 const platformSettingsSchema = z.object({
@@ -73,8 +94,74 @@ adminRouter.patch("/tenants/:id", async (req, res, next) => {
   try {
     const parsed = updateTenantSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ message: "Invalid business", issues: parsed.error.issues }); return; }
-    const tenant = await prisma.tenant.update({ where: { id: req.params.id }, data: parsed.data });
-    await audit(req.auth!.userId, "TENANT_UPDATED", "Tenant", tenant.id, tenant.id, parsed.data);
+
+    const { adminEmail, adminPassword, ...tenantData } = parsed.data;
+    const tenant = await prisma.tenant.update({ where: { id: req.params.id }, data: tenantData });
+
+    if (adminEmail || adminPassword) {
+      const membership = await prisma.tenantUser.findFirst({
+        where: { tenantId: tenant.id, role: { name: "ADMIN" } },
+        include: { user: true },
+      });
+
+      if (membership) {
+        if (adminEmail && adminEmail !== membership.user.email) {
+          const existing = await prisma.user.findUnique({ where: { email: adminEmail } });
+          if (existing && existing.id !== membership.userId) {
+            res.status(409).json({ message: "That admin email is already used by another account" });
+            return;
+          }
+        }
+        await prisma.user.update({
+          where: { id: membership.userId },
+          data: {
+            ...(adminEmail ? { email: adminEmail } : {}),
+            ...(adminPassword ? { passwordHash: await bcrypt.hash(adminPassword, 12) } : {}),
+          },
+        });
+      } else {
+        if (!adminEmail || !adminPassword) {
+          res.status(400).json({ message: "This business has no admin yet. Enter both admin email and password." });
+          return;
+        }
+        const existing = await prisma.user.findUnique({ where: { email: adminEmail } });
+        if (existing) {
+          res.status(409).json({ message: "That admin email is already used by another account" });
+          return;
+        }
+        const permissions = await prisma.permission.findMany({
+          where: { key: { not: "platform.manage" } },
+          select: { id: true },
+        });
+        const role = await prisma.role.upsert({
+          where: { tenantId_name: { tenantId: tenant.id, name: "ADMIN" } },
+          update: {},
+          create: {
+            tenantId: tenant.id,
+            name: "ADMIN",
+            description: "ADMIN role",
+            permissions: { create: permissions.map((permission) => ({ permissionId: permission.id })) },
+          },
+        });
+        const user = await prisma.user.create({
+          data: {
+            email: adminEmail,
+            passwordHash: await bcrypt.hash(adminPassword, 12),
+            firstName: tenant.name,
+            lastName: "Admin",
+          },
+        });
+        await prisma.tenantUser.create({
+          data: { tenantId: tenant.id, userId: user.id, roleId: role.id },
+        });
+      }
+    }
+
+    await audit(req.auth!.userId, "TENANT_UPDATED", "Tenant", tenant.id, tenant.id, {
+      ...tenantData,
+      adminEmail,
+      adminPasswordUpdated: Boolean(adminPassword),
+    });
     res.json({ data: tenant });
   } catch (error) { next(error); }
 });
@@ -97,11 +184,50 @@ adminRouter.patch("/tenants/:tenantId/users/:membershipId", async (req, res, nex
   try {
     const parsed = membershipSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ message: "Invalid membership", issues: parsed.error.issues }); return; }
-    const membership = await prisma.tenantUser.findFirst({ where: { id: req.params.membershipId, tenantId: req.params.tenantId }, include: { user: true } });
+    const membership = await prisma.tenantUser.findFirst({
+      where: { id: req.params.membershipId, tenantId: req.params.tenantId },
+      include: { user: true },
+    });
     if (!membership) { res.status(404).json({ message: "Business user not found" }); return; }
-    if (parsed.data.roleId !== undefined) await prisma.tenantUser.update({ where: { id: membership.id }, data: { roleId: parsed.data.roleId } });
-    if (parsed.data.active !== undefined) await prisma.user.update({ where: { id: membership.userId }, data: { active: parsed.data.active } });
-    await audit(req.auth!.userId, "MEMBERSHIP_UPDATED", "TenantUser", membership.id, req.params.tenantId, parsed.data);
+
+    if (parsed.data.roleId) {
+      const role = await prisma.role.findFirst({
+        where: { id: parsed.data.roleId, tenantId: req.params.tenantId },
+      });
+      if (!role) { res.status(400).json({ message: "Role does not belong to this business" }); return; }
+    }
+
+    if (parsed.data.email && parsed.data.email !== membership.user.email) {
+      const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+      if (existing && existing.id !== membership.userId) {
+        res.status(409).json({ message: "That email is already used by another account" });
+        return;
+      }
+    }
+
+    if (parsed.data.roleId !== undefined) {
+      await prisma.tenantUser.update({
+        where: { id: membership.id },
+        data: { roleId: parsed.data.roleId },
+      });
+    }
+
+    const userData = {
+      ...(parsed.data.active !== undefined ? { active: parsed.data.active } : {}),
+      ...(parsed.data.email ? { email: parsed.data.email } : {}),
+      ...(parsed.data.firstName ? { firstName: parsed.data.firstName } : {}),
+      ...(parsed.data.lastName ? { lastName: parsed.data.lastName } : {}),
+      ...(parsed.data.password ? { passwordHash: await bcrypt.hash(parsed.data.password, 12) } : {}),
+    };
+
+    if (Object.keys(userData).length) {
+      await prisma.user.update({ where: { id: membership.userId }, data: userData });
+    }
+
+    await audit(req.auth!.userId, "MEMBERSHIP_UPDATED", "TenantUser", membership.id, req.params.tenantId, {
+      ...parsed.data,
+      password: parsed.data.password ? "[updated]" : undefined,
+    });
     res.json({ data: { id: membership.id } });
   } catch (error) { next(error); }
 });
@@ -147,6 +273,66 @@ adminRouter.get("/tenants/:id/users", async (req, res, next) => {
       select: { id: true, user: { select: { id: true, firstName: true, lastName: true, email: true, active: true } }, role: { select: { id: true, name: true } } },
     });
     res.json({ data: members });
+  } catch (error) { next(error); }
+});
+
+adminRouter.post("/tenants/:id/users", async (req, res, next) => {
+  try {
+    const parsed = createMembershipSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid user", issues: parsed.error.issues }); return; }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+    if (!tenant) { res.status(404).json({ message: "Business not found" }); return; }
+
+    if (parsed.data.roleId) {
+      const role = await prisma.role.findFirst({
+        where: { id: parsed.data.roleId, tenantId: req.params.id },
+      });
+      if (!role) { res.status(400).json({ message: "Role does not belong to this business" }); return; }
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+    if (existing) {
+      res.status(409).json({ message: "That email is already used by another account" });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+    const membership = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: parsed.data.email,
+          passwordHash,
+          firstName: parsed.data.firstName,
+          lastName: parsed.data.lastName,
+          active: true,
+        },
+      });
+
+      return tx.tenantUser.create({
+        data: {
+          tenantId: req.params.id,
+          userId: user.id,
+          roleId: parsed.data.roleId ?? null,
+        },
+        select: {
+          id: true,
+          user: {
+            select: { id: true, firstName: true, lastName: true, email: true, active: true },
+          },
+          role: { select: { id: true, name: true } },
+        },
+      });
+    });
+
+    await audit(req.auth!.userId, "MEMBERSHIP_CREATED", "TenantUser", membership.id, req.params.id, {
+      email: parsed.data.email,
+      roleId: parsed.data.roleId ?? null,
+    });
+    res.status(201).json({ data: membership });
   } catch (error) { next(error); }
 });
 
@@ -260,19 +446,83 @@ adminRouter.post("/tenants", async (req, res, next) => {
       return;
     }
 
-    const { plan, seats, ...tenantData } = parsed.data;
-    const tenant = await prisma.tenant.create({
-      data: {
-        ...tenantData,
-        subscription: {
-          create: {
-            plan,
-            seats,
-            status: tenantData.status === "ACTIVE" ? "ACTIVE" : "TRIAL",
+    const existingAdmin = await prisma.user.findUnique({
+      where: { email: parsed.data.adminEmail },
+    });
+    if (existingAdmin) {
+      res.status(409).json({ message: "That admin email is already used by another account" });
+      return;
+    }
+
+    const {
+      plan,
+      seats,
+      adminEmail,
+      adminPassword,
+      adminFirstName,
+      adminLastName,
+      ...tenantData
+    } = parsed.data;
+
+    const passwordHash = await bcrypt.hash(adminPassword, 12);
+    const permissions = await prisma.permission.findMany({
+      where: { key: { not: "platform.manage" } },
+      select: { id: true },
+    });
+
+    const tenant = await prisma.$transaction(async (tx) => {
+      const createdTenant = await tx.tenant.create({
+        data: {
+          ...tenantData,
+          subscription: {
+            create: {
+              plan,
+              seats,
+              status: tenantData.status === "ACTIVE" ? "ACTIVE" : "TRIAL",
+            },
           },
         },
-      },
-      include: { subscription: true },
+        include: { subscription: true },
+      });
+
+      const adminRole = await tx.role.create({
+        data: {
+          tenantId: createdTenant.id,
+          name: "ADMIN",
+          description: "ADMIN role",
+          permissions: {
+            create: permissions.map((permission) => ({ permissionId: permission.id })),
+          },
+        },
+      });
+
+      const adminUser = await tx.user.create({
+        data: {
+          email: adminEmail,
+          passwordHash,
+          firstName: adminFirstName,
+          lastName: adminLastName,
+          active: true,
+        },
+      });
+
+      await tx.tenantUser.create({
+        data: {
+          tenantId: createdTenant.id,
+          userId: adminUser.id,
+          roleId: adminRole.id,
+        },
+      });
+
+      return createdTenant;
+    });
+
+    await audit(req.auth!.userId, "TENANT_CREATED", "Tenant", tenant.id, tenant.id, {
+      name: tenant.name,
+      slug: tenant.slug,
+      adminEmail,
+      plan,
+      seats,
     });
 
     res.status(201).json({ data: tenant });
